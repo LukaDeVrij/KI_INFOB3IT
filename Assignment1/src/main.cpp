@@ -2,6 +2,7 @@
 #include <LiquidCrystal.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <NewPing.h>
 
 // put function declarations here:
 void button0Press();
@@ -11,11 +12,15 @@ void scrollInOpMode();
 void opModeSelection();
 void printMainMenu();
 void exitOpMenu();
+void refreshScreen();
+void pollDistance();
+void sprayChecker();
 
 // initialize the library by associating any needed LCD interface pin
 // with the arduino pin number it is connected to
 const int rs = 12, en = 11, d4 = 10, d5 = 9, d6 = 8, d7 = 7;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+unsigned int refreshPeriod = 2000;
 // constants won't change. They're used here to set pin numbers:
 const int button0Pin = 2; // the number of the pushbutton pin
 const int button1Pin = 3; // the number of the pushbutton pin
@@ -34,12 +39,13 @@ char opMenuLines[4][15] = {"Manual trigger", "SprayDelay: ", "Reset counter", "E
 unsigned int opMenuLinesSize = sizeof(opMenuLines) / sizeof(opMenuLines[0]);
 
 // User settings
-int sprayDelay = 10;
+int sprayDelay = 30;
 int spraysLeft = 2400; // TODO make non-voilatile
 
-// Timing zooi
+// Timing zooi - TODO ram optim possible surely -  now we have 2 timers independent; maybe possible to cut some vars here
 unsigned long startMillis;
-unsigned long currentMillis;
+unsigned long startMillisDist;
+unsigned long startMillisSpray;
 
 // Temp sensor
 OneWire oneWire(6);
@@ -47,31 +53,73 @@ OneWire oneWire(6);
 // Pass our oneWire reference to Dallas Temperature.
 DallasTemperature sensors(&oneWire);
 
+// Distance sensor
+int distanceEcho = A4;
+int distanceTrig = A5;
+NewPing sonar(distanceTrig, distanceEcho, 200);
+
+int lastDistance = 0; // global var that gets updated once every second
+
+int sprayPin = 4;
 // State machine probeersel
 
-enum States
+enum State
 {
 	IDLE,
 	IN_USE,
 	IN_USE_1,
 	IN_USE_2,
 	CLEANING,
-	TRIGGERED,
+	TRIGGERED1,
+	TRIGGERED2,
 	SIZE // used for enum>string conversion
 };
 // https://stackoverflow.com/questions/9150538/how-do-i-tostring-an-enum-in-c++
-static const char *StatesNames[] = {"IDLE", "IN_USE", "IN_USE_1", "IN_USE_2", "CLEANING", "TRIGGERED"};
+static const char *StatesNames[] = {"IDLE", "IN_USE", "IN_USE_1", "IN_USE_2", "CLEANING", "TRIGGERED1", "TRIGGERED2"};
 // statically check that the size of ColorNames fits the number of Colors
 static_assert(sizeof(StatesNames) / sizeof(char *) == SIZE, "sizes dont match");
 
 class StateMachine
 { // TODO make better? with member functions maybe?
 public:
-	States current_state;
-	StateMachine() : current_state(States::IDLE) {} // constructor in cpp weird
+	State current_state;
+	StateMachine() : current_state(State::IDLE) {} // constructor in cpp weird
+
+	void transition(State to) //  did not intend for this to become massive; if our flash runs out we might need to solve this differently
+	{
+		switch (current_state)
+		{
+		case State::IDLE:
+			if (to == State::TRIGGERED1 || to == State::TRIGGERED2)
+			{
+				Serial.println("1setstart");
+				startMillisSpray = millis();
+				current_state = to;
+			}
+			break;
+		case State::TRIGGERED2:
+			if (to == State::TRIGGERED1)
+			{
+				Serial.println("2setstart");
+				startMillisSpray = millis();
+				current_state = to;
+				break;
+			}
+		case State::TRIGGERED1:
+			if (to == State::IDLE)
+			{
+				current_state = to;
+				break;
+			}
+		}
+	}
 };
 
 StateMachine machine;
+
+// Spray related vars
+bool sprayingAllowed = true; // var that should be true/false based on movement in room: as soon as no movement (+-5 SECONDS!!!! - signal can fluctuate) spraying is allowed
+bool cleaning = false;		 // TODO hook up to magnetic thing for toilet seat
 
 void setup()
 {
@@ -79,6 +127,7 @@ void setup()
 	// set up the LCD's number of columns and rows:
 	lcd.begin(16, 2);
 	pinMode(ledPin, OUTPUT);
+	pinMode(sprayPin, OUTPUT);
 	// initialize the pushbutton pin as an input:
 	pinMode(button0Pin, INPUT);
 
@@ -94,10 +143,68 @@ void setup()
 	// Copy the formatted string to opMenuLines[1]
 	strcpy(opMenuLines[1], delayStr);
 
-	startMillis = millis(); // initial start time  voor temp sensor (niet altijd 0!)
+	startMillis = millis();		// initial start time  voor temp sensor (niet altijd 0!)
+	startMillisDist = millis(); // initial start time  voor temp sensor (niet altijd 0!)
 }
 
 void loop()
+{
+	refreshScreen();
+	pollDistance();
+	sprayChecker(); // might not be the best way to do this; we could also put it in the transition()
+					// Problem there is that we need to supply power to the pin for 30 odd seconds, so we need to also switch it off after 30 seconds
+					// How do we do that - not to mention preset the state to IDLE? delay for 30 seconds? not ideal - this isnt either tho
+}
+
+void pollDistance()
+{
+	// Every X seconds update main display with temperature
+	// TODO add milis() timing check here
+	unsigned int period = 1000;
+
+	// https://forum.arduino.cc/t/using-millis-for-timing-a-beginners-guide/483573				   // get the current "time" (actually the number of milliseconds since the program started)
+	if (millis() - startMillisDist >= period) // test whether the period has elapsed
+	{
+		startMillisDist = millis(); // IMPORTANT to save the start time of the current LED state.
+
+		lastDistance = sonar.ping_cm();
+	}
+}
+
+void sprayChecker()
+{
+	unsigned int period = 30000; // sprays can take up to 30 seconds to fire after power on TODO add spraydelay var in there
+	if (machine.current_state == State::TRIGGERED1 || machine.current_state == State::TRIGGERED2)
+	{
+		if (!sprayingAllowed)
+		{
+			digitalWrite(sprayPin, LOW); // cancel if on
+			return;
+		}
+		if (millis() - startMillisSpray < period)
+		{						   // TODO look at this: rollover might be a problem
+			digitalWrite(sprayPin, HIGH); // Start power to sprayer
+			Serial.println("HIGH");
+		}
+		else
+		{
+			digitalWrite(4, LOW); // Stop after 30 seconds
+			Serial.println("LOW");
+			startMillisSpray = millis();
+			// Based on state; go through this once more or back to IDLE
+			if (machine.current_state == State::TRIGGERED2)
+			{
+				machine.transition(State::TRIGGERED1);
+			}
+			else
+			{
+				machine.transition(State::IDLE); // Transition back to IDLE state - so we only go through this once
+			}
+		}
+	}
+}
+
+void refreshScreen()
 {
 	if (!opMode)
 	{
@@ -106,10 +213,9 @@ void loop()
 		unsigned int period = 2000;
 
 		// https://forum.arduino.cc/t/using-millis-for-timing-a-beginners-guide/483573
-		currentMillis = millis();				   // get the current "time" (actually the number of milliseconds since the program started)
-		if (currentMillis - startMillis >= period) // test whether the period has elapsed
+		if (millis() - startMillis >= period) // test whether the period has elapsed
 		{
-			startMillis = currentMillis; // IMPORTANT to save the start time of the current LED state.
+			startMillis = millis(); // IMPORTANT to save the start time of the current LED state.
 			printMainMenu();
 		}
 	}
@@ -160,6 +266,7 @@ void button1Press()
 
 		if (!button1Pressed) // if not already pressed down
 		{
+			Serial.println("pressed1");
 			// this is only called once, as soon as button is pressed!
 			button1Pressed = true;
 			digitalWrite(ledPin, HIGH);
@@ -197,12 +304,10 @@ void scrollInOpMode()
 {
 	if (opModeCursor == opMenuLinesSize - 1)
 	{
-		// Prevent scrolling further than possible -> TODO wrap around maybe (now youre stuck on Go Back)
-		return;
+		opModeCursor = -1;
 	}
 	opModeCursor++;
 	printOpMenu();
-	Serial.println("SC");
 }
 
 void opModeSelection()
@@ -213,20 +318,19 @@ void opModeSelection()
 	switch (opModeCursor)
 	{
 	case 0:
-		// TODO manual trigger
-		// Set state to triggered-1 (or 2?)
-		// Go back to main menu automatically
+		machine.transition(State::TRIGGERED1);
 		exitOpMenu();
 		break;
 	case 1:
 		// SprayDelay
 		lcd.setCursor(0, 0);
-		if (sprayDelay >= 60 ? sprayDelay = 0 : sprayDelay += 5)
+		if (sprayDelay >= 90 ? sprayDelay = 30 : sprayDelay += 5)
 			;			   // ternary: cond ? then : else
 		char delayStr[20]; // TODO ram optim possible
 		sprintf(delayStr, "SprayDelay: %d", sprayDelay);
 		// Copy the formatted string to opMenuLines[1]
 		strcpy(opMenuLines[1], delayStr);
+		lcd.print(">");
 		lcd.print(opMenuLines[1]);
 
 		break;
@@ -246,18 +350,23 @@ void exitOpMenu()
 	lcd.clear();
 	opMode = false;
 	opModeCursor = 0;
-	printMainMenu();
 }
 
 void printMainMenu()
 {
 	sensors.requestTemperatures();
-
+	lcd.clear();
 	lcd.setCursor(0, 0);
 	lcd.print(spraysLeft);
 	lcd.print(" - ");
-	lcd.print(sensors.getTempCByIndex(0));
+	lcd.print(sensors.getTempCByIndex(0)); // TODO this is slow; hence flicker - can be fixed by either not clearing the lcd or just doing this last (I THINK)
 	lcd.print("C");
+	lcd.print("  ");
+	if (sprayingAllowed)
+	{
+		lcd.setCursor(15, 0);
+		lcd.print("*");
+	}
 	lcd.setCursor(0, 1);
 	lcd.print(StatesNames[machine.current_state]);
 }
