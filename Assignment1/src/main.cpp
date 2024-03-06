@@ -15,6 +15,8 @@ void exitOpMenu();
 void refreshScreen();
 void pollDistance();
 void sprayChecker();
+void checkUsageType();
+void usageEnded();
 
 // initialize the library by associating any needed LCD interface pin
 // with the arduino pin number it is connected to
@@ -60,7 +62,13 @@ int distanceEcho = A4;
 int distanceTrig = A5;
 NewPing sonar(distanceTrig, distanceEcho, 200);
 
-int lastDistance = 0; // global var that gets updated once every second
+unsigned int lastDistance = 0; // global var that gets updated once every second
+unsigned int seatedDistanceMax = 100;
+unsigned int firstSeatedTime = 0;
+unsigned int timeSpentInProx;
+bool seated = false;
+
+unsigned int usageTypeTimeThreshold = 80000; // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
 
 int sprayPin = 4;
 // State machine probeersel
@@ -116,6 +124,7 @@ public:
 				break;
 			}
 		}
+		// TODO meer cases toevoegen die ook de situaties in pollDistance en usageEnded() reflecteren en daadwerkelijk laten werken
 	}
 };
 
@@ -155,9 +164,7 @@ void loop()
 {
 	refreshScreen();
 	pollDistance();
-	sprayChecker(); // might not be the best way to do this; we could also put it in the transition()
-					// Problem there is that we need to supply power to the pin for 30 odd seconds, so we need to also switch it off after 30 seconds
-					// How do we do that - not to mention preset the state to IDLE? delay for 30 seconds? not ideal - this isnt either tho
+	sprayChecker();
 }
 
 void pollDistance()
@@ -172,7 +179,49 @@ void pollDistance()
 		startMillisDist = millis(); // IMPORTANT to save the start time of the current LED state.
 
 		lastDistance = sonar.ping_cm();
+		if (lastDistance >= seatedDistanceMax || lastDistance == 0) // LastDistance kan ook 0 worden als distance sens niets ziet: dan is er dus niemand seated
+		{
+			// Distance sensors senses something far away/nothing at all
+			seated = false;
+			usageEnded();
+			return;
+		}
+		// Someone in distance - someone is seated
+		if (seated == false)
+		{
+			seated = true;
+			firstSeatedTime = millis();
+			// Happens once as soon as this code is reached
+		} else {
+			// Als seated == true: update timeSpentInProx constant
+			timeSpentInProx = millis() - firstSeatedTime;
+			if (timeSpentInProx >= usageTypeTimeThreshold){
+				machine.transition(State::IN_USE_2); 
+				// TODO prob more here
+			} else {
+				machine.transition(State::IN_USE);
+				// IN USE -> dus we weten nog niet of de persoon weg gaat binnen de tijd, dan wordt t een nummer 1, maar eigenlijk boeit die state niet want dan gaan we gelijk naar TRIG1 
+				// eigenlijk hebben we IN_USE_1 niet echt nodig dus... oh well
+			}
+		}
 	}
+}
+
+void usageEnded()
+{
+	// Only triggeres after someone is out of proximity (seated = false)
+	timeSpentInProx = millis() - firstSeatedTime; // Rollover problems? I am scared
+	if (timeSpentInProx >= usageTypeTimeThreshold){ 
+		// Number 2
+		machine.transition(State::TRIGGERED2);
+		// TODO more here?
+	}
+	else {
+		// Number 1
+		machine.transition(State::TRIGGERED2);
+		// TODO more here?
+	}
+	
 }
 
 void sprayChecker()
@@ -180,21 +229,24 @@ void sprayChecker()
 	unsigned int period = 30000; // sprays can take up to 30 seconds to fire after power on TODO add spraydelay var in there
 	if (machine.current_state == State::TRIGGERED1 || machine.current_state == State::TRIGGERED2)
 	{
-		if (!sprayingAllowed)
+		if (!sprayingAllowed || opMode) // in OpMode ook niet sprayen
 		{
 			digitalWrite(sprayPin, LOW); // cancel if on
 			return;
 		}
 		// TODO Refactor every mention of 30 to global variable of delay of spraymachine itself (as low as 20 maybe? not to user tho)
-		if (millis() - triggeredTime >= (sprayDelay - 30) * 1000){ // Check if SprayDelay has passed
-		} else {
+		if (millis() - triggeredTime >= (sprayDelay - 30) * 1000)
+		{ // Check if SprayDelay has passed
+		}
+		else
+		{
 			// Delay has not passed yet: we wait
 			// TODO invert this into a guard clause with return
 			return;
 		}
 		if (millis() - startMillisSpray < period) //  TODO Incorporate SprayDelay
-		{						   // TODO look at this: rollover might be a problem
-			digitalWrite(sprayPin, HIGH); // Start power to sprayer
+		{										  // TODO look at this: rollover might be a problem
+			digitalWrite(sprayPin, HIGH);		  // Start power to sprayer
 			Serial.println("HIGH");
 		}
 		else
@@ -362,6 +414,8 @@ void exitOpMenu()
 	lcd.clear();
 	opMode = false;
 	opModeCursor = 0;
+	// TODO 
+	// Suspend all other functionality whenever the menu system is active (status is ‘operator menu active’). Upon exit of the menu system, the system should return to the ‘not in use’ status.
 }
 
 void printMainMenu()
