@@ -39,13 +39,15 @@ char opMenuLines[4][15] = {"Manual trigger", "SprayDelay: ", "Reset counter", "E
 unsigned int opMenuLinesSize = sizeof(opMenuLines) / sizeof(opMenuLines[0]);
 
 // User settings
-int sprayDelay = 30;
-int spraysLeft = 2400; // TODO make non-voilatile
+unsigned int sprayDelay = 30;
+unsigned int spraysLeft = 2400; // TODO make non-voilatile
 
 // Timing zooi - TODO ram optim possible surely -  now we have 2 timers independent; maybe possible to cut some vars here
 unsigned long startMillis;
 unsigned long startMillisDist;
 unsigned long startMillisSpray;
+unsigned long startMillisDelay;
+unsigned long triggeredTime;
 
 // Temp sensor
 OneWire oneWire(6);
@@ -93,7 +95,8 @@ public:
 			if (to == State::TRIGGERED1 || to == State::TRIGGERED2)
 			{
 				Serial.println("1setstart");
-				startMillisSpray = millis();
+				startMillisSpray = millis() + (sprayDelay - 30) * 1000;
+				triggeredTime = millis();
 				current_state = to;
 			}
 			break;
@@ -101,7 +104,8 @@ public:
 			if (to == State::TRIGGERED1)
 			{
 				Serial.println("2setstart");
-				startMillisSpray = millis();
+				startMillisSpray = millis() + (sprayDelay - 30) * 1000;
+				triggeredTime = millis();
 				current_state = to;
 				break;
 			}
@@ -181,7 +185,14 @@ void sprayChecker()
 			digitalWrite(sprayPin, LOW); // cancel if on
 			return;
 		}
-		if (millis() - startMillisSpray < period)
+		// TODO Refactor every mention of 30 to global variable of delay of spraymachine itself (as low as 20 maybe? not to user tho)
+		if (millis() - triggeredTime >= (sprayDelay - 30) * 1000){ // Check if SprayDelay has passed
+		} else {
+			// Delay has not passed yet: we wait
+			// TODO invert this into a guard clause with return
+			return;
+		}
+		if (millis() - startMillisSpray < period) //  TODO Incorporate SprayDelay
 		{						   // TODO look at this: rollover might be a problem
 			digitalWrite(sprayPin, HIGH); // Start power to sprayer
 			Serial.println("HIGH");
@@ -191,6 +202,7 @@ void sprayChecker()
 			digitalWrite(4, LOW); // Stop after 30 seconds
 			Serial.println("LOW");
 			startMillisSpray = millis();
+			triggeredTime = millis(); // idk
 			// Based on state; go through this once more or back to IDLE
 			if (machine.current_state == State::TRIGGERED2)
 			{
@@ -369,4 +381,6 @@ void printMainMenu()
 	}
 	lcd.setCursor(0, 1);
 	lcd.print(StatesNames[machine.current_state]);
+	lcd.setCursor(13, 1);
+	lcd.print(lastDistance);
 }
