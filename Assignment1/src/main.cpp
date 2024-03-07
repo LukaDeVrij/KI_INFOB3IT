@@ -67,7 +67,7 @@ unsigned int seatedDistanceMax = 100;
 unsigned int firstSeatedTime = 0;
 unsigned int timeSpentInProx;
 bool seated = false;
-
+int consecutiveZeroDistance = 0;
 unsigned int usageTypeTimeThreshold = 10000; // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
 
 int sprayPin = 4;
@@ -196,19 +196,33 @@ void pollDistance()
 		startMillisDist = millis(); // IMPORTANT to save the start time of the current LED state.
 
 		lastDistance = sonar.ping_cm();
+
 		if (lastDistance >= seatedDistanceMax || lastDistance == 0) // LastDistance kan ook 0 worden als distance sens niets ziet: dan is er dus niemand seated
 		// TODO BUG: distance sens doet soms gwn ff 0 voor saus -> handle idk how
 		{
+			// Iterative bug fix voor bovenstaande - deze code is echt bagger in deze functie sorry ;-;
+			consecutiveZeroDistance += 1;
+			if (consecutiveZeroDistance <= 5)
+			{
+				// 0 was a false negative - someone still here!
+				Serial.print(consecutiveZeroDistance);
+				Serial.println(" - 0 seen: waiting for confirmation...");
+				return;
+			}
+
 			if (seated == false)
 			{
 				// Zodat de code hieronder maar 1 keer gerunt wordt nadat iemand weggegaan is
 				return;
 			}
+			Serial.println("Actually 0!");
+			consecutiveZeroDistance = 0;
 			// Distance sensors senses something far away/nothing at all
 			seated = false;
 			usageEnded();
 			return;
 		}
+		consecutiveZeroDistance = 0;
 		// Someone in distance - someone is seated
 		if (seated == false)
 		{
@@ -237,7 +251,8 @@ void pollDistance()
 
 void usageEnded()
 {
-	Serial.print("Usage ended! noone in prox anymore");
+	Serial.println("Usage ended! noone in prox anymore");
+	consecutiveZeroDistance = 0; // reset
 	// Only triggeres after someone is out of proximity (seated == false)
 	timeSpentInProx = millis() - firstSeatedTime; // Rollover problems? I am scared
 	if (timeSpentInProx >= usageTypeTimeThreshold)
@@ -274,9 +289,9 @@ void sprayChecker()
 			// TODO invert this into a guard clause with return
 			return;
 		}
-		if (millis() - startMillisSpray < period) //  TODO Incorporate SprayDelay
-		{										  // TODO look at this: rollover might be a problem
-			digitalWrite(sprayPin, HIGH);		  // Start power to sprayer
+		if (millis() - startMillisSpray < period)
+		{								  // TODO look at this: rollover might be a problem
+			digitalWrite(sprayPin, HIGH); // Start power to sprayer
 		}
 		else
 		{
