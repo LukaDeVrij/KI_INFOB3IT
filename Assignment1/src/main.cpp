@@ -68,7 +68,7 @@ unsigned int firstSeatedTime = 0;
 unsigned int timeSpentInProx;
 bool seated = false;
 
-unsigned int usageTypeTimeThreshold = 80000; // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
+unsigned int usageTypeTimeThreshold = 10000; // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
 
 int sprayPin = 4;
 // State machine probeersel
@@ -97,6 +97,11 @@ public:
 
 	void transition(State to) //  did not intend for this to become massive; if our flash runs out we might need to solve this differently
 	{
+		Serial.print("Attempting state switch ");
+		Serial.print(StatesNames[current_state]);
+		Serial.print(" to ");
+		Serial.print(StatesNames[to]);
+		Serial.println();
 		switch (current_state)
 		{
 		case State::IDLE:
@@ -107,6 +112,10 @@ public:
 				triggeredTime = millis();
 				current_state = to;
 			}
+			if (to == State::IN_USE || to == State::IN_USE_2)
+			{
+				current_state = to;
+			}
 			break;
 		case State::TRIGGERED2:
 			if (to == State::TRIGGERED1)
@@ -115,14 +124,21 @@ public:
 				startMillisSpray = millis() + (sprayDelay - 30) * 1000;
 				triggeredTime = millis();
 				current_state = to;
-				break;
 			}
+			break;
 		case State::TRIGGERED1:
 			if (to == State::IDLE)
 			{
 				current_state = to;
-				break;
 			}
+			break;
+		case State::IN_USE:
+			current_state = to;
+			break;
+
+		case State::IN_USE_2:
+			current_state = to;
+			break;
 		}
 		// TODO meer cases toevoegen die ook de situaties in pollDistance en usageEnded() reflecteren en daadwerkelijk laten werken
 	}
@@ -176,11 +192,18 @@ void pollDistance()
 	// https://forum.arduino.cc/t/using-millis-for-timing-a-beginners-guide/483573				   // get the current "time" (actually the number of milliseconds since the program started)
 	if (millis() - startMillisDist >= period) // test whether the period has elapsed
 	{
+		// Eveything in this loop is done once per period
 		startMillisDist = millis(); // IMPORTANT to save the start time of the current LED state.
 
 		lastDistance = sonar.ping_cm();
 		if (lastDistance >= seatedDistanceMax || lastDistance == 0) // LastDistance kan ook 0 worden als distance sens niets ziet: dan is er dus niemand seated
+		// TODO BUG: distance sens doet soms gwn ff 0 voor saus -> handle idk how
 		{
+			if (seated == false)
+			{
+				// Zodat de code hieronder maar 1 keer gerunt wordt nadat iemand weggegaan is
+				return;
+			}
 			// Distance sensors senses something far away/nothing at all
 			seated = false;
 			usageEnded();
@@ -189,18 +212,23 @@ void pollDistance()
 		// Someone in distance - someone is seated
 		if (seated == false)
 		{
+			// Happens once as soon as this code is reached
 			seated = true;
 			firstSeatedTime = millis();
-			// Happens once as soon as this code is reached
-		} else {
-			// Als seated == true: update timeSpentInProx constant
+		}
+		else
+		{
+			// Als seated == true: update timeSpentInProx constantly
 			timeSpentInProx = millis() - firstSeatedTime;
-			if (timeSpentInProx >= usageTypeTimeThreshold){
-				machine.transition(State::IN_USE_2); 
+			if (timeSpentInProx >= usageTypeTimeThreshold)
+			{
+				machine.transition(State::IN_USE_2);
 				// TODO prob more here
-			} else {
+			}
+			else
+			{
 				machine.transition(State::IN_USE);
-				// IN USE -> dus we weten nog niet of de persoon weg gaat binnen de tijd, dan wordt t een nummer 1, maar eigenlijk boeit die state niet want dan gaan we gelijk naar TRIG1 
+				// IN USE -> dus we weten nog niet of de persoon weg gaat binnen de tijd, dan wordt t een nummer 1, maar eigenlijk boeit die state niet want dan gaan we gelijk naar TRIG1
 				// eigenlijk hebben we IN_USE_1 niet echt nodig dus... oh well
 			}
 		}
@@ -209,19 +237,21 @@ void pollDistance()
 
 void usageEnded()
 {
-	// Only triggeres after someone is out of proximity (seated = false)
+	Serial.print("Usage ended! noone in prox anymore");
+	// Only triggeres after someone is out of proximity (seated == false)
 	timeSpentInProx = millis() - firstSeatedTime; // Rollover problems? I am scared
-	if (timeSpentInProx >= usageTypeTimeThreshold){ 
+	if (timeSpentInProx >= usageTypeTimeThreshold)
+	{
 		// Number 2
 		machine.transition(State::TRIGGERED2);
 		// TODO more here?
 	}
-	else {
+	else
+	{
 		// Number 1
-		machine.transition(State::TRIGGERED2);
+		machine.transition(State::TRIGGERED1);
 		// TODO more here?
 	}
-	
 }
 
 void sprayChecker()
@@ -247,17 +277,16 @@ void sprayChecker()
 		if (millis() - startMillisSpray < period) //  TODO Incorporate SprayDelay
 		{										  // TODO look at this: rollover might be a problem
 			digitalWrite(sprayPin, HIGH);		  // Start power to sprayer
-			Serial.println("HIGH");
 		}
 		else
 		{
 			digitalWrite(4, LOW); // Stop after 30 seconds
-			Serial.println("LOW");
 			startMillisSpray = millis();
 			triggeredTime = millis(); // idk
 			// Based on state; go through this once more or back to IDLE
 			if (machine.current_state == State::TRIGGERED2)
 			{
+				Serial.println("Trig2 finished, changing to Trig1"); // TODO BUG HERE ?!! first loop done - not after 30 seconds but way less (maybe 30 sec from startup)
 				machine.transition(State::TRIGGERED1);
 			}
 			else
@@ -414,7 +443,7 @@ void exitOpMenu()
 	lcd.clear();
 	opMode = false;
 	opModeCursor = 0;
-	// TODO 
+	// TODO
 	// Suspend all other functionality whenever the menu system is active (status is ‘operator menu active’). Upon exit of the menu system, the system should return to the ‘not in use’ status.
 }
 
