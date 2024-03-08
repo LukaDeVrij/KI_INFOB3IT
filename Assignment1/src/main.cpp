@@ -17,6 +17,7 @@ void pollDistance();
 void sprayChecker();
 void checkUsageType();
 void usageEnded();
+void checkOverrideButton();
 
 // initialize the library by associating any needed LCD interface pin
 // with the arduino pin number it is connected to
@@ -26,13 +27,26 @@ unsigned int refreshPeriod = 2000;
 // constants won't change. They're used here to set pin numbers:
 const int button0Pin = 2; // the number of the pushbutton pin
 const int button1Pin = 3; // the number of the pushbutton pin
-const int ledPin = 13;	  // the number of the LED pin
+
+const int ledPin = 13; // the number of the LED pin
 int button0PressCount = 0;
 int button0Pressed = false;
 int button1Pressed = false;
+
 // variables will change:
 volatile int button0State = 0; // variable for reading the pushbutton status
 volatile int button1State = 0; // variable for reading the pushbutton status
+
+// Manual override debouce
+const int overrideButtonPin = A0;
+int overrideButtonPressed = false;
+volatile int overrideButtonState = 0; // variable for reading the pushbutton status
+volatile int lastButtonState = HIGH;
+
+// the following variables are unsigned longs because the time, measured in
+// milliseconds, will quickly become a bigger number than can be stored in an int.
+unsigned long lastDebounceTime = 0; // the last time the output pin was toggled
+unsigned long debounceDelay = 50;	// the debounce time; increase if the output flickers
 
 // Op Mode
 bool opMode = false;
@@ -179,8 +193,50 @@ void setup()
 void loop()
 {
 	refreshScreen();
-	pollDistance();
+	// pollDistance();
 	sprayChecker();
+	checkOverrideButton();
+}
+
+void checkOverrideButton()
+{
+	// https://docs.arduino.cc/built-in-examples/digital/Debounce/
+	//  read the state of the switch into a local variable:
+	int reading = digitalRead(overrideButtonPin);
+	reading = !reading;
+	// Serial.println(reading);
+	// check to see if you just pressed the button
+	// (i.e. the input went from LOW to HIGH), and you've waited long enough
+	// since the last press to ignore any noise:
+
+	// If the switch changed, due to noise or pressing:
+	if (reading != lastButtonState)
+	{
+		// reset the debouncing timer
+		lastDebounceTime = millis();
+	}
+
+	if ((millis() - lastDebounceTime) > debounceDelay)
+	{
+		// whatever the reading is at, it's been there for longer than the debounce
+		// delay, so take it as the actual current state:
+
+		// if the button state has changed:
+		if (reading != overrideButtonState)
+		{
+			overrideButtonState = reading;
+
+			// only toggle the LED if the new button state is HIGH
+			// machine.transition(State::TRIGGERED1);
+			if (overrideButtonState == LOW)
+			{
+				machine.transition(State::TRIGGERED1);
+			}
+		}
+	}
+
+	// save the reading. Next time through the loop, it'll be the lastButtonState:
+	lastButtonState = reading;
 }
 
 void pollDistance()
