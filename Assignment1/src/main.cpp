@@ -385,6 +385,7 @@ void refreshScreen()
 	}
 }
 
+unsigned long lastPressed0 = 0;
 void button0Press()
 {
 	// TODO Check some state maybe
@@ -397,14 +398,23 @@ void button0Press()
 	{
 		if (!button0Pressed) // if not already pressed down
 		{
-			// this is only called once, as soon as button is pressed!
+			Serial.println("pressed0");
+			if (lastPressed0 + 250 >= millis()) // bouncer
+			{
+				Serial.println("bounce caught");
+				digitalWrite(ledPin, LOW);
+				button0Pressed = false;
+				return;
+			}
+			lastPressed0 = millis();
+			// so this is only called once, as soon as button is pressed!
 
 			button0Pressed = true;
 			digitalWrite(ledPin, HIGH);
 			if (opMode)
 			{
 				Serial.println("SE");
-				opModeSelection(); // this function must do something based on opModeCursor (not yet implemented)
+				opModeSelection(); // this function does something based on value of opModeCursor
 				return;
 			};
 			opMode = true;
@@ -417,9 +427,10 @@ void button0Press()
 		button0Pressed = false;
 	}
 
-	lcd.setCursor(0, 1); // No clue why this is here but if we remove it everything crashes?!
+	lcd.setCursor(0, 1); // No clue why this is here but if we remove it everything crashes?! classic
 }
 
+unsigned long lastPressed1 = 0;
 void button1Press()
 {
 	// read the state of the pushbutton value:
@@ -430,7 +441,16 @@ void button1Press()
 
 		if (!button1Pressed) // if not already pressed down
 		{
-			Serial.println("pressed1");
+			Serial.print("pressed1 ");
+			Serial.println(millis());
+			if (lastPressed1 + 250 >= millis()) // bouncer
+			{
+				Serial.println("bounce caught");
+				digitalWrite(ledPin, LOW);
+				button1Pressed = false;
+				return;
+			}
+			lastPressed1 = millis();
 			// this is only called once, as soon as button is pressed!
 			button1Pressed = true;
 			digitalWrite(ledPin, HIGH);
