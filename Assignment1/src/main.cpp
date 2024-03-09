@@ -70,8 +70,12 @@ unsigned int opMenuLinesSize = sizeof(opMenuLines) / sizeof(opMenuLines[0]);
 
 // User settings
 unsigned int sprayDelay = 30;
-unsigned int spraysLeft = 2400; // TODO make non-voilatile
 unsigned int lightLevel = 600;
+
+// EEPROM data
+unsigned int spraysLeft = 2400; // TODO make non-voilatile
+unsigned int uses = 0;
+
 
 // Timing zooi - TODO ram optim possible surely -  now we have 2 timers independent; maybe possible to cut some vars here
 unsigned long startMillis;
@@ -427,10 +431,19 @@ void sprayChecker()
 				Serial.println("Trig2 finished, changing to Trig1");
 				// triggeredTime = millis(); // idk
 				machine.transition(State::TRIGGERED1);
+				uses++;
 			}
 			else
 			{
 				machine.transition(State::IDLE); // Transition back to IDLE state - so we only go through this once
+				uses++;
+
+				Serial.println("Printing to eeprom");
+				spraysLeft = spraysLeft - uses;
+				uses = 0;
+				Serial.println(spraysLeft);
+				uses = 0;
+
 			}
 		}
 	}
