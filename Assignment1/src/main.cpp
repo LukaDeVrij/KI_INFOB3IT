@@ -19,16 +19,27 @@ void checkUsageType();
 void usageEnded();
 void checkOverrideButton();
 
-// initialize the library by associating any needed LCD interface pin
-// with the arduino pin number it is connected to
-const int rs = 12, en = 11, d4 = 10, d5 = 9, d6 = 8, d7 = 7;
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
-unsigned int refreshPeriod = 2000;
+//Pins:
 // constants won't change. They're used here to set pin numbers:
+const int rs = 12, en = 11, d4 = 10, d5 = 9, d6 = 8, d7 = 7; //LCD pins
 const int button0Pin = 2; // the number of the pushbutton pin
 const int button1Pin = 3; // the number of the pushbutton pin
+const int overrideButtonPin = A0;
+const int led0Pin = 13; // the number of the LED pin
+const int led1pin = A2;
+const int distanceEcho = A4;
+const int distanceTrig = A5;
+const int sprayPin = 4;
+const int tempPin = 6;
+const int ldrPin = A1;
+const int magnetPin = A3;
+const int motionPin = 5;
 
-const int ledPin = 13; // the number of the LED pin
+// initialize the library by associating any needed LCD interface pin
+// with the arduino pin number it is connected to
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+unsigned int refreshPeriod = 2000;
+
 int button0PressCount = 0;
 int button0Pressed = false;
 int button1Pressed = false;
@@ -38,7 +49,6 @@ volatile int button0State = 0; // variable for reading the pushbutton status
 volatile int button1State = 0; // variable for reading the pushbutton status
 
 // Manual override debouce
-const int overrideButtonPin = A0;
 int overrideButtonPressed = false;
 volatile int overrideButtonState = 0; // variable for reading the pushbutton status
 volatile int lastButtonState = HIGH;
@@ -66,14 +76,13 @@ unsigned long startMillisDelay;
 unsigned long triggeredTime;
 
 // Temp sensor
-OneWire oneWire(6);
+OneWire oneWire(tempPin);
 
 // Pass our oneWire reference to Dallas Temperature.
 DallasTemperature sensors(&oneWire);
 
 // Distance sensor
-int distanceEcho = A4;
-int distanceTrig = A5;
+
 NewPing sonar(distanceTrig, distanceEcho, 200);
 
 unsigned int lastDistance = 0; // global var that gets updated once every second
@@ -84,7 +93,7 @@ bool seated = false;
 int consecutiveZeroDistance = 0;
 unsigned int usageTypeTimeThreshold = 10000; // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
 
-int sprayPin = 4;
+
 // State machine probeersel
 
 enum State
@@ -169,7 +178,7 @@ void setup()
 	Serial.begin(9600);
 	// set up the LCD's number of columns and rows:
 	lcd.begin(16, 2);
-	pinMode(ledPin, OUTPUT);
+	pinMode(led0Pin, OUTPUT);
 	pinMode(sprayPin, OUTPUT);
 	// initialize the pushbutton pin as an input:
 	pinMode(button0Pin, INPUT);
@@ -402,7 +411,7 @@ void button0Press()
 			if (lastPressed0 + 250 >= millis()) // bouncer
 			{
 				Serial.println("bounce caught");
-				digitalWrite(ledPin, LOW);
+				digitalWrite(led0Pin, LOW);
 				button0Pressed = false;
 				return;
 			}
@@ -410,7 +419,7 @@ void button0Press()
 			// so this is only called once, as soon as button is pressed!
 
 			button0Pressed = true;
-			digitalWrite(ledPin, HIGH);
+			digitalWrite(led0Pin, HIGH);
 			if (opMode)
 			{
 				Serial.println("SE");
@@ -423,7 +432,7 @@ void button0Press()
 	}
 	else // means button is not pressed
 	{
-		digitalWrite(ledPin, LOW);
+		digitalWrite(led0Pin, LOW);
 		button0Pressed = false;
 	}
 
@@ -446,14 +455,14 @@ void button1Press()
 			if (lastPressed1 + 250 >= millis()) // bouncer
 			{
 				Serial.println("bounce caught");
-				digitalWrite(ledPin, LOW);
+				digitalWrite(led0Pin, LOW);
 				button1Pressed = false;
 				return;
 			}
 			lastPressed1 = millis();
 			// this is only called once, as soon as button is pressed!
 			button1Pressed = true;
-			digitalWrite(ledPin, HIGH);
+			digitalWrite(led0Pin, HIGH);
 			if (opMode)
 			{
 
@@ -463,7 +472,7 @@ void button1Press()
 	}
 	else
 	{
-		digitalWrite(ledPin, LOW);
+		digitalWrite(led0Pin, LOW);
 		button1Pressed = false;
 	}
 }
