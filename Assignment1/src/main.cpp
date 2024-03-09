@@ -198,11 +198,12 @@ public:
 		case State::IN_USE_2:
 			if (to == State::TRIGGERED2)
 			{
-				Serial.println("succ7");
+				Serial.println(anyMotionInInterval);
 				if (anyMotionInInterval)
 				{
 					break;
 				}
+				Serial.println("erdoorheeen");
 				startMillisSpray = millis();
 				// triggeredTime = millis();
 				current_state = to;
@@ -278,6 +279,7 @@ void loop()
 	sprayChecker();
 	checkOverrideButton();
 	magnetCheck();
+	motionDetect();
 }
 
 void checkOverrideButton()
@@ -544,7 +546,7 @@ void motionDetect()
 
 unsigned int magnetsApartLast = 0;
 bool openToilet = false;
-const int cleaningInterval = 1000;
+const int cleaningInterval = 60000;
 void magnetCheck()
 {
 	int m = digitalRead(magnetPin);
@@ -558,14 +560,15 @@ void magnetCheck()
 	}
 	else
 	{
-		Serial.println("open");
 		if(!m)
 		{
 			openToilet = false;
 		}
 		if(millis() - magnetsApartLast >= cleaningInterval)
 		{
-			
+			if(machine.current_state == State::CLEANING){
+				return;
+			}
 			machine.transition(State::CLEANING);
 		}
 	}
