@@ -190,6 +190,10 @@ public:
 			{
 				current_state = to;
 			}
+			if (to == State::CLEANING)
+			{
+				current_state = to;
+			}
 			break;
 		case State::IN_USE_2:
 			if (to == State::TRIGGERED2)
@@ -214,6 +218,16 @@ public:
 			if (to == State::IDLE)
 			{
 				current_state = to;
+			}
+			if (to == State::CLEANING)
+			{
+				current_state = to;
+			}
+			break;
+		case State::CLEANING:
+			if(lastDistance >= seatedDistanceMax || lastDistance == 0)
+			{
+				current_state = IDLE;
 			}
 			break;
 		}
@@ -530,7 +544,7 @@ void motionDetect()
 
 unsigned int magnetsApartLast = 0;
 bool openToilet = false;
-const int cleaningInterval = 60*1000;
+const int cleaningInterval = 1000;
 void magnetCheck()
 {
 	int m = digitalRead(magnetPin);
@@ -544,12 +558,14 @@ void magnetCheck()
 	}
 	else
 	{
+		Serial.println("open");
 		if(!m)
 		{
 			openToilet = false;
 		}
 		if(millis() - magnetsApartLast >= cleaningInterval)
 		{
+			
 			machine.transition(State::CLEANING);
 		}
 	}
