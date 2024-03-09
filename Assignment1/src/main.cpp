@@ -76,7 +76,6 @@ unsigned int lightLevel = 600;
 unsigned int spraysLeft = 2400; // TODO make non-voilatile
 unsigned int uses = 0;
 
-
 // Timing zooi - TODO ram optim possible surely -  now we have 2 timers independent; maybe possible to cut some vars here
 unsigned long startMillis;
 unsigned long startMillisDist;
@@ -178,6 +177,7 @@ public:
 				startMillisSpray = millis();
 				if (anyMotionInInterval)
 				{
+					seated = true;
 					break;
 				}
 				current_state = to;
@@ -201,6 +201,7 @@ public:
 				Serial.println(anyMotionInInterval);
 				if (anyMotionInInterval)
 				{
+					seated = true;
 					break;
 				}
 				Serial.println("erdoorheeen");
@@ -226,7 +227,7 @@ public:
 			}
 			break;
 		case State::CLEANING:
-			if(lastDistance >= seatedDistanceMax || lastDistance == 0)
+			if (lastDistance >= seatedDistanceMax || lastDistance == 0)
 			{
 				current_state = IDLE;
 			}
@@ -334,6 +335,7 @@ void pollDistance()
 	{
 		if (!lightCheck)
 		{
+			Serial.println("darkmode");
 			pingInterval *= 2; // ECO mode
 		}
 		else
@@ -348,6 +350,7 @@ void pollDistance()
 		if (lastDistance >= seatedDistanceMax || lastDistance == 0) // LastDistance kan ook 0 worden als distance sens niets ziet: dan is er dus niemand seated
 		// TODO BUG: distance sens doet soms gwn ff 0 voor saus -> handle idk how
 		{
+
 			// Iterative bug fix voor bovenstaande - deze code is echt bagger in deze functie sorry ;-;
 			consecutiveZeroDistance += 1;
 			if (consecutiveZeroDistance <= 5)
@@ -361,10 +364,11 @@ void pollDistance()
 			if (seated == false)
 			{
 				// Zodat de code hieronder maar 1 keer gerunt wordt nadat iemand weggegaan is
+				Serial.println("seated is nu false");
 				return;
 			}
 			Serial.println("Actually 0!");
-			consecutiveZeroDistance = 0;
+			// consecutiveZeroDistance = 0;
 			// Distance sensors senses something far away/nothing at all
 			seated = false;
 			usageEnded();
@@ -400,20 +404,29 @@ void pollDistance()
 void usageEnded()
 {
 	Serial.println("Usage ended! noone in prox anymore");
-	consecutiveZeroDistance = 0; // reset
+	consecutiveZeroDistance = 0;
+	// consecutiveZeroDistance = 0; // reset
 	// Only triggeres after someone is out of proximity (seated == false)
-	timeSpentInProx = millis() - firstSeatedTime; // Rollover problems? I am scared
-	if (timeSpentInProx >= usageTypeTimeThreshold)
+	// timeSpentInProx = millis() - firstSeatedTime; // Rollover problems? I am scared
+	// if (timeSpentInProx >= usageTypeTimeThreshold)
+	// {
+	// 	// Number 2
+	// 	machine.transition(State::TRIGGERED2);
+	// 	// TODO more here?
+	// }
+	// else
+	// {
+	// 	// Number 1
+	// 	machine.transition(State::TRIGGERED1);
+	// 	// TODO more here?
+	// }
+	if (machine.current_state == State::IN_USE)
 	{
-		// Number 2
-		machine.transition(State::TRIGGERED2);
-		// TODO more here?
+		machine.transition(State::TRIGGERED1);
 	}
 	else
 	{
-		// Number 1
-		machine.transition(State::TRIGGERED1);
-		// TODO more here?
+		machine.transition(State::TRIGGERED2);
 	}
 }
 
@@ -459,7 +472,6 @@ void sprayChecker()
 				uses = 0;
 				Serial.println(spraysLeft);
 				uses = 0;
-
 			}
 		}
 	}
@@ -527,6 +539,27 @@ void button0Press()
 	lcd.setCursor(0, 1); // No clue why this is here but if we remove it everything crashes?! classic
 }
 
+void motionDetectNEWER()
+{
+	unsigned long currentMillis = millis();
+	if (currentMillis - previousMillis >= 3000)
+	{
+		previousMillis = currentMillis;
+		// anyMotionInInterval = false;
+		// Serial.println("motion bool reset");
+		int motionState = digitalRead(motionPin);
+		if (motionState == HIGH)
+		{
+			Serial.println("Motion!!!11!");
+			anyMotionInInterval = true;
+		}
+		else
+		{
+			anyMotionInInterval = false;
+		}
+	}
+}
+
 void motionDetect()
 {
 	unsigned long currentMillis = millis();
@@ -544,31 +577,33 @@ void motionDetect()
 	}
 }
 
-unsigned int magnetsApartLast = 0;
+unsigned long magnetsApartLast = 0;
 bool openToilet = false;
-const int cleaningInterval = 60000;
+const unsigned long cleaningInterval = 60000;
 void magnetCheck()
 {
 	int m = digitalRead(magnetPin);
-	if(!openToilet)
+	if (!openToilet)
 	{
-		if(m)
+		if (m)
 		{
 			magnetsApartLast = millis();
-			openToilet=true;
+			openToilet = true;
 		}
 	}
 	else
 	{
-		if(!m)
+		if (!m)
 		{
 			openToilet = false;
 		}
-		if(millis() - magnetsApartLast >= cleaningInterval)
+		if (millis() - magnetsApartLast >= cleaningInterval)
 		{
-			if(machine.current_state == State::CLEANING){
+			if (machine.current_state == State::CLEANING)
+			{
 				return;
 			}
+			Serial.println("Cleaning");
 			machine.transition(State::CLEANING);
 		}
 	}
