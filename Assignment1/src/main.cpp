@@ -37,7 +37,7 @@ const int button0Pin = 2;									 // the number of the pushbutton pin
 const int button1Pin = 3;									 // the number of the pushbutton pin
 const int overrideButtonPin = A0;
 const int led0Pin = 13; // the number of the LED pin
-const int led1pin = A2;
+const int led1Pin = A2;
 const int distanceEcho = A4;
 const int distanceTrig = A5;
 const int sprayPin = 4;
@@ -263,7 +263,7 @@ void setup()
 	// set up the LCD's number of columns and rows:
 	lcd.begin(16, 2);
 	pinMode(led0Pin, OUTPUT);
-	pinMode(led1pin, OUTPUT);
+	pinMode(led1Pin, OUTPUT);
 	pinMode(sprayPin, OUTPUT);
 	// initialize the pushbutton pin as an input:
 	pinMode(button0Pin, INPUT);
@@ -296,6 +296,62 @@ void loop()
 	magnetCheck();
 	motionDetect();
 	displayLEDS();
+}
+const unsigned ledInterval = 1000;
+unsigned long prevLedChange = 0;
+unsigned long prevLed = LOW;
+void displayLEDS()
+{
+	unsigned long timeLED = millis();
+	switch (machine.current_state)
+	{
+	case State::IN_USE:
+		digitalWrite(led0Pin,HIGH);
+		digitalWrite(led1Pin,LOW);
+		break;
+	case State::IN_USE_2:
+		digitalWrite(led0Pin,HIGH);
+		digitalWrite(led1Pin,HIGH);
+		break;
+	case State::CLEANING:
+		digitalWrite(led0Pin,LOW);
+		digitalWrite(led1Pin,HIGH);
+		break;
+	case State::TRIGGERED1:
+		digitalWrite(led1Pin,LOW);
+		if(timeLED-prevLedChange>=ledInterval){
+			prevLedChange = timeLED;
+			if(prevLed==LOW)
+			{
+				prevLed = HIGH;
+			}
+			else
+			{
+				prevLed = LOW;
+			}
+		}
+		digitalWrite(led0Pin,prevLed);
+		break;
+	case State::TRIGGERED2:
+		if(timeLED-prevLedChange>=ledInterval){
+			prevLedChange = timeLED;
+			if(prevLed==LOW)
+			{
+				prevLed = HIGH;
+			}
+			else
+			{
+				prevLed = LOW;
+			}
+		}
+		digitalWrite(led0Pin,prevLed);
+		digitalWrite(led1Pin,prevLed);
+		break;
+	default:
+		digitalWrite(led0Pin,LOW);
+		digitalWrite(led1Pin,LOW);
+		break;
+	}
 }
 
 void checkOverrideButton()
@@ -514,7 +570,6 @@ void button0Press()
 			if (lastPressed0 + 250 >= millis()) // bouncer
 			{
 				Serial.println("bounce caught");
-				digitalWrite(led0Pin, LOW);
 				button0Pressed = false;
 				return;
 			}
@@ -522,7 +577,6 @@ void button0Press()
 			// so this is only called once, as soon as button is pressed!
 
 			button0Pressed = true;
-			digitalWrite(led0Pin, HIGH);
 			if (opMode)
 			{
 				Serial.println("SE");
@@ -535,7 +589,6 @@ void button0Press()
 	}
 	else // means button is not pressed
 	{
-		digitalWrite(led0Pin, LOW);
 		button0Pressed = false;
 	}
 
@@ -635,14 +688,12 @@ void button1Press()
 			if (lastPressed1 + 250 >= millis()) // bouncer
 			{
 				Serial.println("bounce caught");
-				digitalWrite(led0Pin, LOW);
 				button1Pressed = false;
 				return;
 			}
 			lastPressed1 = millis();
 			// this is only called once, as soon as button is pressed!
 			button1Pressed = true;
-			digitalWrite(led0Pin, HIGH);
 			if (opMode)
 			{
 
@@ -652,7 +703,6 @@ void button1Press()
 	}
 	else
 	{
-		digitalWrite(led0Pin, LOW);
 		button1Pressed = false;
 	}
 }
