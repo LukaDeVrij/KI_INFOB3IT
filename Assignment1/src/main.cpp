@@ -305,19 +305,19 @@ void displayLEDS()
 	unsigned long timeLED = millis();
 	switch (machine.current_state)
 	{
-	case State::IN_USE:
+	case State::IN_USE: //green light
 		digitalWrite(led0Pin,HIGH);
 		digitalWrite(led1Pin,LOW);
 		break;
-	case State::IN_USE_2:
+	case State::IN_USE_2: //both lights
 		digitalWrite(led0Pin,HIGH);
 		digitalWrite(led1Pin,HIGH);
 		break;
-	case State::CLEANING:
+	case State::CLEANING: //yellow light
 		digitalWrite(led0Pin,LOW);
 		digitalWrite(led1Pin,HIGH);
 		break;
-	case State::TRIGGERED1:
+	case State::TRIGGERED1: //green blink
 		digitalWrite(led1Pin,LOW);
 		if(timeLED-prevLedChange>=ledInterval){
 			prevLedChange = timeLED;
@@ -332,7 +332,7 @@ void displayLEDS()
 		}
 		digitalWrite(led0Pin,prevLed);
 		break;
-	case State::TRIGGERED2:
+	case State::TRIGGERED2: //both blink
 		if(timeLED-prevLedChange>=ledInterval){
 			prevLedChange = timeLED;
 			if(prevLed==LOW)
@@ -347,7 +347,7 @@ void displayLEDS()
 		digitalWrite(led0Pin,prevLed);
 		digitalWrite(led1Pin,prevLed);
 		break;
-	default:
+	default: //no light
 		digitalWrite(led0Pin,LOW);
 		digitalWrite(led1Pin,LOW);
 		break;
