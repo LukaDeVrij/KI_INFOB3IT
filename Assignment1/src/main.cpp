@@ -22,7 +22,6 @@ void magnetCheck();
 bool lightCheck();
 void motionDetect();
 
-
 // Pins:
 //  constants won't change. They're used here to set pin numbers:
 const int rs = 12, en = 11, d4 = 10, d5 = 9, d6 = 8, d7 = 7; // LCD pins
@@ -81,6 +80,11 @@ unsigned long startMillisSpray;
 unsigned long startMillisDelay;
 unsigned long triggeredTime = 0;
 
+// Motion  sens boolean
+bool motionSensed = false;
+unsigned long previousMillis;
+bool anyMotionInInterval = false;
+
 // Temp sensor
 OneWire oneWire(tempPin);
 
@@ -97,8 +101,8 @@ unsigned int firstSeatedTime = 0;
 unsigned int timeSpentInProx;
 bool seated = false;
 int consecutiveZeroDistance = 0;
-unsigned int usageTypeTimeThreshold = 10000; // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
-unsigned int pingInterval = basePingInterval; //time in between pings
+unsigned int usageTypeTimeThreshold = 10000;  // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
+unsigned int pingInterval = basePingInterval; // time in between pings
 
 // State machine probeersel
 
@@ -136,6 +140,7 @@ public:
 		case State::IDLE:
 			if (to == State::TRIGGERED1 || to == State::TRIGGERED2)
 			{
+
 				Serial.println("1setstart");
 				startMillisSpray = millis();
 				// triggeredTime = millis();
@@ -149,6 +154,7 @@ public:
 		case State::TRIGGERED2:
 			if (to == State::TRIGGERED1)
 			{
+
 				Serial.println("2setstart");
 				startMillisSpray = millis();
 				triggeredTime = millis();
@@ -166,10 +172,17 @@ public:
 			{
 				Serial.println("succes");
 				startMillisSpray = millis();
-				// triggeredTime = millis();
+				if (anyMotionInInterval)
+				{
+					break;
+				}
 				current_state = to;
 			}
 			if (to == State::IN_USE_2)
+			{
+				current_state = to;
+			}
+			if (to == State::IDLE)
 			{
 				current_state = to;
 			}
@@ -178,6 +191,10 @@ public:
 			if (to == State::TRIGGERED2)
 			{
 				Serial.println("succ7");
+				if (anyMotionInInterval)
+				{
+					break;
+				}
 				startMillisSpray = millis();
 				// triggeredTime = millis();
 				current_state = to;
@@ -185,8 +202,13 @@ public:
 			if (to == State::TRIGGERED1)
 			{
 				Serial.println("succ7");
+
 				startMillisSpray = millis();
 				// triggeredTime = millis();
+				current_state = to;
+			}
+			if (to == State::IDLE)
+			{
 				current_state = to;
 			}
 			break;
@@ -211,7 +233,7 @@ void setup()
 	pinMode(sprayPin, OUTPUT);
 	// initialize the pushbutton pin as an input:
 	pinMode(button0Pin, INPUT);
-	attachInterrupt(digitalPinToInterrupt(button0Pin), button0Press, CHANGE); //TODO 2x zelfde pin???
+	attachInterrupt(digitalPinToInterrupt(button0Pin), button0Press, CHANGE); // TODO 2x zelfde pin???
 	attachInterrupt(digitalPinToInterrupt(button1Pin), button1Press, CHANGE);
 
 	// Other sensors Initialisation
@@ -272,6 +294,7 @@ void checkOverrideButton()
 			// machine.transition(State::TRIGGERED1);
 			if (overrideButtonState == LOW)
 			{
+				machine.transition(State::IDLE);
 				machine.transition(State::TRIGGERED1);
 			}
 		}
@@ -285,14 +308,13 @@ void pollDistance()
 {
 	// Every X seconds update main display with temperature
 	// TODO add milis() timing check here
-	
 
 	// https://forum.arduino.cc/t/using-millis-for-timing-a-beginners-guide/483573				   // get the current "time" (actually the number of milliseconds since the program started)
 	if (millis() - startMillisDist >= pingInterval) // test whether the period has elapsed
 	{
-		if(!lightCheck)
+		if (!lightCheck)
 		{
-			pingInterval *=2; //ECO mode
+			pingInterval *= 2; // ECO mode
 		}
 		else
 		{
@@ -398,7 +420,7 @@ void sprayChecker()
 		{
 			digitalWrite(sprayPin, LOW); // Stop after 30 seconds
 			startMillisSpray = millis();
-			
+
 			// Based on state; go through this once more or back to IDLE
 			if (machine.current_state == State::TRIGGERED2)
 			{
@@ -478,17 +500,19 @@ void button0Press()
 
 void motionDetect()
 {
+	unsigned long currentMillis = millis();
+	if (currentMillis - previousMillis >= 10000)
+	{
+		previousMillis = currentMillis;
+		anyMotionInInterval = false;
+		Serial.println("motion bool reset");
+	}
 	int motionState = digitalRead(motionPin);
-	if (motionState == HIGH) 
+	if (motionState == HIGH && anyMotionInInterval == false)
 	{
-    // turn LED on:
-    	digitalWrite(led1pin, HIGH);
-  	} 
-	else 
-	{
-    // turn LED off:
-    	digitalWrite(led1pin, LOW);
-  	}
+		Serial.println("Motion!!!11!");
+		anyMotionInInterval = true;
+	}
 }
 
 unsigned int magnetsApartLast = 0;
@@ -521,8 +545,8 @@ void magnetCheck()
 bool lightCheck()
 {
 	int v = analogRead(ldrPin);
-   	Serial.println(v);
-	return (v>lightLevel);
+	// Serial.println(v);
+	return (v > lightLevel);
 }
 
 unsigned long lastPressed1 = 0;
@@ -597,6 +621,7 @@ void opModeSelection()
 	switch (opModeCursor)
 	{
 	case 0:
+		machine.transition(State::IDLE);
 		machine.transition(State::TRIGGERED1);
 		exitOpMenu();
 		break;
@@ -643,7 +668,7 @@ void printMainMenu()
 	lcd.print(sensors.getTempCByIndex(0)); // TODO this is slow; hence flicker - can be fixed by either not clearing the lcd or just doing this last (I THINK)
 	lcd.print("C");
 	lcd.print("  ");
-	if (sprayingAllowed)
+	if (anyMotionInInterval)
 	{
 		lcd.setCursor(15, 0);
 		lcd.print("*");
