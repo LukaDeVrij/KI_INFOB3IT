@@ -18,6 +18,10 @@ void sprayChecker();
 void checkUsageType();
 void usageEnded();
 void checkOverrideButton();
+void magnetCheck();
+bool lightCheck();
+void motionDetect();
+
 
 //Pins:
 // constants won't change. They're used here to set pin numbers:
@@ -35,6 +39,7 @@ const int ldrPin = A1;
 const int magnetPin = A3;
 const int motionPin = 5;
 
+const int basePingInterval = 1000;
 // initialize the library by associating any needed LCD interface pin
 // with the arduino pin number it is connected to
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
@@ -67,6 +72,7 @@ unsigned int opMenuLinesSize = sizeof(opMenuLines) / sizeof(opMenuLines[0]);
 // User settings
 unsigned int sprayDelay = 30;
 unsigned int spraysLeft = 2400; // TODO make non-voilatile
+unsigned int lightLevel = 600;
 
 // Timing zooi - TODO ram optim possible surely -  now we have 2 timers independent; maybe possible to cut some vars here
 unsigned long startMillis;
@@ -92,7 +98,7 @@ unsigned int timeSpentInProx;
 bool seated = false;
 int consecutiveZeroDistance = 0;
 unsigned int usageTypeTimeThreshold = 10000; // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
-
+unsigned int pingInterval = basePingInterval; //time in between pings
 
 // State machine probeersel
 
@@ -179,13 +185,17 @@ void setup()
 	// set up the LCD's number of columns and rows:
 	lcd.begin(16, 2);
 	pinMode(led0Pin, OUTPUT);
+	pinMode(led1pin, OUTPUT);
 	pinMode(sprayPin, OUTPUT);
 	// initialize the pushbutton pin as an input:
 	pinMode(button0Pin, INPUT);
-
-	attachInterrupt(digitalPinToInterrupt(button0Pin), button0Press, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(button0Pin), button0Press, CHANGE); //TODO 2x zelfde pin???
 	attachInterrupt(digitalPinToInterrupt(button1Pin), button1Press, CHANGE);
 
+	// Other sensors Initialisation
+	pinMode(ldrPin, INPUT);
+	pinMode(motionPin, INPUT);
+	pinMode(magnetPin, INPUT);
 	sensors.begin(); // temp sensor
 
 	// Define a char array to hold the concatenated string
@@ -202,9 +212,12 @@ void setup()
 void loop()
 {
 	refreshScreen();
-	// pollDistance();
+	pollDistance();
 	sprayChecker();
 	checkOverrideButton();
+	magnetCheck();
+	motionDetect();
+	lightCheck();
 }
 
 void checkOverrideButton()
@@ -252,11 +265,19 @@ void pollDistance()
 {
 	// Every X seconds update main display with temperature
 	// TODO add milis() timing check here
-	unsigned int period = 1000;
+	
 
 	// https://forum.arduino.cc/t/using-millis-for-timing-a-beginners-guide/483573				   // get the current "time" (actually the number of milliseconds since the program started)
-	if (millis() - startMillisDist >= period) // test whether the period has elapsed
+	if (millis() - startMillisDist >= pingInterval) // test whether the period has elapsed
 	{
+		if(!lightCheck)
+		{
+			pingInterval *=2; //ECO mode
+		}
+		else
+		{
+			pingInterval = basePingInterval;
+		}
 		// Eveything in this loop is done once per period
 		startMillisDist = millis(); // IMPORTANT to save the start time of the current LED state.
 
@@ -367,6 +388,7 @@ void sprayChecker()
 			if (machine.current_state == State::TRIGGERED2)
 			{
 				Serial.println("Trig2 finished, changing to Trig1"); // TODO BUG HERE ?!! first loop done - not after 30 seconds but way less (maybe 30 sec from startup)
+				digitalWrite(sprayPin,LOW);
 				machine.transition(State::TRIGGERED1);
 			}
 			else
@@ -437,6 +459,43 @@ void button0Press()
 	}
 
 	lcd.setCursor(0, 1); // No clue why this is here but if we remove it everything crashes?! classic
+}
+
+void motionDetect()
+{
+	int motionState = digitalRead(motionPin);
+	if (motionState == HIGH) 
+	{
+    // turn LED on:
+    	digitalWrite(led1pin, HIGH);
+  	} 
+	else 
+	{
+    // turn LED off:
+    	digitalWrite(led1pin, LOW);
+  	}
+}
+
+void magnetCheck()
+{
+	int magnetState = digitalRead(magnetPin);
+	if (magnetState == HIGH) 
+	{
+    // turn LED on:
+    	digitalWrite(led1pin, HIGH);
+  	} 
+	else 
+	{
+    // turn LED off:
+    	digitalWrite(led1pin, LOW);
+  	}
+}
+
+bool lightCheck()
+{
+	int v = analogRead(ldrPin);
+   	Serial.println(v);
+	return (v>lightLevel);
 }
 
 unsigned long lastPressed1 = 0;
