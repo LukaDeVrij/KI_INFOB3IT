@@ -238,8 +238,6 @@ void loop()
 	sprayChecker();
 	checkOverrideButton();
 	magnetCheck();
-	motionDetect();
-	lightCheck();
 }
 
 void checkOverrideButton()
@@ -493,19 +491,31 @@ void motionDetect()
   	}
 }
 
+unsigned int magnetsApartLast = 0;
+bool openToilet = false;
+const int cleaningInterval = 60*1000;
 void magnetCheck()
 {
-	int magnetState = digitalRead(magnetPin);
-	if (magnetState == HIGH) 
+	int m = digitalRead(magnetPin);
+	if(!openToilet)
 	{
-    // turn LED on:
-    	digitalWrite(led1pin, HIGH);
-  	} 
-	else 
+		if(m)
+		{
+			magnetsApartLast = millis();
+			openToilet=true;
+		}
+	}
+	else
 	{
-    // turn LED off:
-    	digitalWrite(led1pin, LOW);
-  	}
+		if(!m)
+		{
+			openToilet = false;
+		}
+		if(millis() - magnetsApartLast >= cleaningInterval)
+		{
+			machine.transition(State::CLEANING);
+		}
+	}
 }
 
 bool lightCheck()
