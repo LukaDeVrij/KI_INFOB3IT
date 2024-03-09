@@ -19,11 +19,11 @@ void checkUsageType();
 void usageEnded();
 void checkOverrideButton();
 
-//Pins:
-// constants won't change. They're used here to set pin numbers:
-const int rs = 12, en = 11, d4 = 10, d5 = 9, d6 = 8, d7 = 7; //LCD pins
-const int button0Pin = 2; // the number of the pushbutton pin
-const int button1Pin = 3; // the number of the pushbutton pin
+// Pins:
+//  constants won't change. They're used here to set pin numbers:
+const int rs = 12, en = 11, d4 = 10, d5 = 9, d6 = 8, d7 = 7; // LCD pins
+const int button0Pin = 2;									 // the number of the pushbutton pin
+const int button1Pin = 3;									 // the number of the pushbutton pin
 const int overrideButtonPin = A0;
 const int led0Pin = 13; // the number of the LED pin
 const int led1pin = A2;
@@ -73,7 +73,7 @@ unsigned long startMillis;
 unsigned long startMillisDist;
 unsigned long startMillisSpray;
 unsigned long startMillisDelay;
-unsigned long triggeredTime;
+unsigned long triggeredTime = 0;
 
 // Temp sensor
 OneWire oneWire(tempPin);
@@ -92,7 +92,6 @@ unsigned int timeSpentInProx;
 bool seated = false;
 int consecutiveZeroDistance = 0;
 unsigned int usageTypeTimeThreshold = 10000; // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
-
 
 // State machine probeersel
 
@@ -131,8 +130,8 @@ public:
 			if (to == State::TRIGGERED1 || to == State::TRIGGERED2)
 			{
 				Serial.println("1setstart");
-				startMillisSpray = millis() + (sprayDelay - 30) * 1000;
-				triggeredTime = millis();
+				startMillisSpray = millis();
+				// triggeredTime = millis();
 				current_state = to;
 			}
 			if (to == State::IN_USE || to == State::IN_USE_2)
@@ -144,7 +143,7 @@ public:
 			if (to == State::TRIGGERED1)
 			{
 				Serial.println("2setstart");
-				startMillisSpray = millis() + (sprayDelay - 30) * 1000;
+				startMillisSpray = millis();
 				triggeredTime = millis();
 				current_state = to;
 			}
@@ -156,11 +155,33 @@ public:
 			}
 			break;
 		case State::IN_USE:
-			current_state = to;
+			if (to == State::TRIGGERED1)
+			{
+				Serial.println("succes");
+				startMillisSpray = millis();
+				// triggeredTime = millis();
+				current_state = to;
+			}
+			if (to == State::IN_USE_2)
+			{
+				current_state = to;
+			}
 			break;
-
 		case State::IN_USE_2:
-			current_state = to;
+			if (to == State::TRIGGERED2)
+			{
+				Serial.println("succ7");
+				startMillisSpray = millis();
+				// triggeredTime = millis();
+				current_state = to;
+			}
+			if (to == State::TRIGGERED1)
+			{
+				Serial.println("succ7");
+				startMillisSpray = millis();
+				// triggeredTime = millis();
+				current_state = to;
+			}
 			break;
 		}
 		// TODO meer cases toevoegen die ook de situaties in pollDistance en usageEnded() reflecteren en daadwerkelijk laten werken
@@ -202,7 +223,7 @@ void setup()
 void loop()
 {
 	refreshScreen();
-	// pollDistance();
+	pollDistance();
 	sprayChecker();
 	checkOverrideButton();
 }
@@ -336,7 +357,7 @@ void usageEnded()
 
 void sprayChecker()
 {
-	unsigned int period = 30000; // sprays can take up to 30 seconds to fire after power on TODO add spraydelay var in there
+	unsigned int period = 22000; // sprays can take up to 30 seconds to fire after power on TODO add spraydelay var in there
 	if (machine.current_state == State::TRIGGERED1 || machine.current_state == State::TRIGGERED2)
 	{
 		if (!sprayingAllowed || opMode) // in OpMode ook niet sprayen
@@ -344,14 +365,9 @@ void sprayChecker()
 			digitalWrite(sprayPin, LOW); // cancel if on
 			return;
 		}
-		// TODO Refactor every mention of 30 to global variable of delay of spraymachine itself (as low as 20 maybe? not to user tho)
-		if (millis() - triggeredTime >= (sprayDelay - 30) * 1000)
-		{ // Check if SprayDelay has passed
-		}
-		else
-		{
-			// Delay has not passed yet: we wait
-			// TODO invert this into a guard clause with return
+		if (millis() - triggeredTime < 3 * 1000)
+		{ // Slight delay that is always there: to make sure Trig2 > Trig1 is smooth
+			Serial.println("Delaying...");
 			return;
 		}
 		if (millis() - startMillisSpray < period)
@@ -360,13 +376,14 @@ void sprayChecker()
 		}
 		else
 		{
-			digitalWrite(4, LOW); // Stop after 30 seconds
+			digitalWrite(sprayPin, LOW); // Stop after 30 seconds
 			startMillisSpray = millis();
-			triggeredTime = millis(); // idk
+			
 			// Based on state; go through this once more or back to IDLE
 			if (machine.current_state == State::TRIGGERED2)
 			{
-				Serial.println("Trig2 finished, changing to Trig1"); // TODO BUG HERE ?!! first loop done - not after 30 seconds but way less (maybe 30 sec from startup)
+				Serial.println("Trig2 finished, changing to Trig1");
+				// triggeredTime = millis(); // idk
 				machine.transition(State::TRIGGERED1);
 			}
 			else
