@@ -4,6 +4,13 @@
 #include <DallasTemperature.h>
 #include <NewPing.h>
 
+// MASSIVE TODO 
+/*
+ - Delay in manual override
+ - EEPROM
+ - Display LEDS:
+
+*/
 // put function declarations here:
 void button0Press();
 void button1Press();
@@ -21,6 +28,7 @@ void checkOverrideButton();
 void magnetCheck();
 bool lightCheck();
 void motionDetect();
+void displayLEDS();
 
 // Pins:
 //  constants won't change. They're used here to set pin numbers:
@@ -95,13 +103,12 @@ OneWire oneWire(tempPin);
 DallasTemperature sensors(&oneWire);
 
 // Distance sensor
-
 NewPing sonar(distanceTrig, distanceEcho, 200);
 
 unsigned int lastDistance = 0; // global var that gets updated once every second
 unsigned int seatedDistanceMax = 100;
-unsigned int firstSeatedTime = 0;
-unsigned int timeSpentInProx;
+unsigned long firstSeatedTime = 0;
+unsigned long timeSpentInProx;
 bool seated = false;
 int consecutiveZeroDistance = 0;
 unsigned int usageTypeTimeThreshold = 10000;  // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
@@ -126,12 +133,12 @@ static const char *StatesNames[] = {"IDLE", "IN_USE", "IN_USE_1", "IN_USE_2", "C
 static_assert(sizeof(StatesNames) / sizeof(char *) == SIZE, "sizes dont match");
 
 class StateMachine
-{ // TODO make better? with member functions maybe?
+{
 public:
 	State current_state;
-	StateMachine() : current_state(State::IDLE) {} // constructor in cpp weird
+	StateMachine() : current_state(State::IDLE) {}
 
-	void transition(State to) //  did not intend for this to become massive; if our flash runs out we might need to solve this differently
+	void transition(State to)
 	{
 		Serial.print("Attempting state switch ");
 		Serial.print(StatesNames[current_state]);
@@ -141,16 +148,16 @@ public:
 		switch (current_state)
 		{
 		case State::IDLE:
-			if (to == State::TRIGGERED1 || to == State::TRIGGERED2)
+			if (to == State::TRIGGERED1)
 			{
 
 				Serial.println("1setstart");
 				startMillisSpray = millis();
-				// triggeredTime = millis();
 				current_state = to;
 			}
-			if (to == State::IN_USE || to == State::IN_USE_2)
+			if (to == State::IN_USE)
 			{
+				firstSeatedTime = millis();
 				current_state = to;
 			}
 			break;
@@ -167,6 +174,7 @@ public:
 		case State::TRIGGERED1:
 			if (to == State::IDLE)
 			{
+				seated = false;
 				current_state = to;
 			}
 			break;
@@ -177,7 +185,6 @@ public:
 				startMillisSpray = millis();
 				if (anyMotionInInterval)
 				{
-					seated = true;
 					break;
 				}
 				current_state = to;
@@ -188,6 +195,7 @@ public:
 			}
 			if (to == State::IDLE)
 			{
+				seated = false;
 				current_state = to;
 			}
 			if (to == State::CLEANING)
@@ -201,7 +209,6 @@ public:
 				Serial.println(anyMotionInInterval);
 				if (anyMotionInInterval)
 				{
-					seated = true;
 					break;
 				}
 				Serial.println("erdoorheeen");
@@ -219,6 +226,7 @@ public:
 			}
 			if (to == State::IDLE)
 			{
+				seated = false;
 				current_state = to;
 			}
 			if (to == State::CLEANING)
@@ -230,6 +238,12 @@ public:
 			if (lastDistance >= seatedDistanceMax || lastDistance == 0)
 			{
 				current_state = IDLE;
+				seated = false;;
+			}
+			if (to == State::IDLE)
+			{
+				seated = false;
+				current_state = to;
 			}
 			break;
 		}
@@ -281,6 +295,7 @@ void loop()
 	checkOverrideButton();
 	magnetCheck();
 	motionDetect();
+	displayLEDS();
 }
 
 void checkOverrideButton()
@@ -333,10 +348,10 @@ void pollDistance()
 	// https://forum.arduino.cc/t/using-millis-for-timing-a-beginners-guide/483573				   // get the current "time" (actually the number of milliseconds since the program started)
 	if (millis() - startMillisDist >= pingInterval) // test whether the period has elapsed
 	{
-		if (!lightCheck)
+		if (!lightCheck())
 		{
 			Serial.println("darkmode");
-			pingInterval *= 2; // ECO mode
+			pingInterval = basePingInterval * 2; // ECO mode
 		}
 		else
 		{
@@ -361,42 +376,31 @@ void pollDistance()
 				return;
 			}
 
-			if (seated == false)
-			{
-				// Zodat de code hieronder maar 1 keer gerunt wordt nadat iemand weggegaan is
-				Serial.println("seated is nu false");
-				return;
-			}
 			Serial.println("Actually 0!");
-			// consecutiveZeroDistance = 0;
+			consecutiveZeroDistance = 0;
 			// Distance sensors senses something far away/nothing at all
-			seated = false;
 			usageEnded();
 			return;
 		}
 		consecutiveZeroDistance = 0;
-		// Someone in distance - someone is seated
-		if (seated == false)
+		if (!seated)
 		{
-			// Happens once as soon as this code is reached
-			seated = true;
 			firstSeatedTime = millis();
+			seated = true;
+		}
+
+		timeSpentInProx = millis() - firstSeatedTime;
+		if (timeSpentInProx >= usageTypeTimeThreshold)
+		{
+			machine.transition(State::IN_USE_2);
+			// TODO prob more here
 		}
 		else
 		{
-			// Als seated == true: update timeSpentInProx constantly
-			timeSpentInProx = millis() - firstSeatedTime;
-			if (timeSpentInProx >= usageTypeTimeThreshold)
-			{
-				machine.transition(State::IN_USE_2);
-				// TODO prob more here
-			}
-			else
-			{
-				machine.transition(State::IN_USE);
-				// IN USE -> dus we weten nog niet of de persoon weg gaat binnen de tijd, dan wordt t een nummer 1, maar eigenlijk boeit die state niet want dan gaan we gelijk naar TRIG1
-				// eigenlijk hebben we IN_USE_1 niet echt nodig dus... oh well
-			}
+
+			machine.transition(State::IN_USE);
+			// IN USE -> dus we weten nog niet of de persoon weg gaat binnen de tijd, dan wordt t een nummer 1, maar eigenlijk boeit die state niet want dan gaan we gelijk naar TRIG1
+			// eigenlijk hebben we IN_USE_1 niet echt nodig dus... oh well
 		}
 	}
 }
@@ -404,7 +408,6 @@ void pollDistance()
 void usageEnded()
 {
 	Serial.println("Usage ended! noone in prox anymore");
-	consecutiveZeroDistance = 0;
 	// consecutiveZeroDistance = 0; // reset
 	// Only triggeres after someone is out of proximity (seated == false)
 	// timeSpentInProx = millis() - firstSeatedTime; // Rollover problems? I am scared
@@ -424,7 +427,7 @@ void usageEnded()
 	{
 		machine.transition(State::TRIGGERED1);
 	}
-	else
+	else if (machine.current_state == State::IN_USE_2)
 	{
 		machine.transition(State::TRIGGERED2);
 	}
@@ -612,7 +615,7 @@ void magnetCheck()
 bool lightCheck()
 {
 	int v = analogRead(ldrPin);
-	// Serial.println(v);
+	Serial.println(v);
 	return (v > lightLevel);
 }
 
@@ -706,7 +709,7 @@ void opModeSelection()
 
 		break;
 	case 2:
-		spraysLeft = 2500;
+		spraysLeft = 2400;
 		// TODO write this to EEPROM?
 		exitOpMenu();
 		break;
