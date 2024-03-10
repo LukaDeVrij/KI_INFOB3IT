@@ -369,7 +369,8 @@ void displayLEDS()
 		break;
 	}
 }
-
+bool manualTriggered = false;
+unsigned long startDelayTime;
 void checkOverrideButton()
 {
 	// https://docs.arduino.cc/built-in-examples/digital/Debounce/
@@ -763,7 +764,7 @@ void opModeSelection()
 	case 1:
 		// SprayDelay
 		lcd.setCursor(0, 0);
-		if (sprayDelay >= 60 ? sprayDelay = 0 : sprayDelay += 5)
+		if (sprayDelay >= 60 ? sprayDelay = 0 : sprayDelay += 10)
 			;			   // ternary: cond ? then : else
 		char delayStr[20]; // TODO ram optim possible
 		sprintf(delayStr, "SprayDelay: %d", sprayDelay);
