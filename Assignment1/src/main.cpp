@@ -310,6 +310,7 @@ void loop()
 	displayLEDS();
 	delayManualSpray();
 }
+
 const unsigned ledInterval = 1000;
 unsigned long prevLedChange = 0;
 unsigned long prevLed = LOW;
@@ -318,23 +319,24 @@ void displayLEDS()
 	unsigned long timeLED = millis();
 	switch (machine.current_state)
 	{
-	case State::IN_USE: //green light
-		digitalWrite(led0Pin,HIGH);
-		digitalWrite(led1Pin,LOW);
+	case State::IN_USE: // green light
+		digitalWrite(led0Pin, HIGH);
+		digitalWrite(led1Pin, LOW);
 		break;
-	case State::IN_USE_2: //both lights
-		digitalWrite(led0Pin,HIGH);
-		digitalWrite(led1Pin,HIGH);
+	case State::IN_USE_2: // both lights
+		digitalWrite(led0Pin, HIGH);
+		digitalWrite(led1Pin, HIGH);
 		break;
-	case State::CLEANING: //yellow light
-		digitalWrite(led0Pin,LOW);
-		digitalWrite(led1Pin,HIGH);
+	case State::CLEANING: // yellow light
+		digitalWrite(led0Pin, LOW);
+		digitalWrite(led1Pin, HIGH);
 		break;
-	case State::TRIGGERED1: //green blink
-		digitalWrite(led1Pin,LOW);
-		if(timeLED-prevLedChange>=ledInterval){
+	case State::TRIGGERED1: // green blink
+		digitalWrite(led1Pin, LOW);
+		if (timeLED - prevLedChange >= ledInterval)
+		{
 			prevLedChange = timeLED;
-			if(prevLed==LOW)
+			if (prevLed == LOW)
 			{
 				prevLed = HIGH;
 			}
@@ -343,12 +345,13 @@ void displayLEDS()
 				prevLed = LOW;
 			}
 		}
-		digitalWrite(led0Pin,prevLed);
+		digitalWrite(led0Pin, prevLed);
 		break;
-	case State::TRIGGERED2: //both blink
-		if(timeLED-prevLedChange>=ledInterval){
+	case State::TRIGGERED2: // both blink
+		if (timeLED - prevLedChange >= ledInterval)
+		{
 			prevLedChange = timeLED;
-			if(prevLed==LOW)
+			if (prevLed == LOW)
 			{
 				prevLed = HIGH;
 			}
@@ -357,12 +360,12 @@ void displayLEDS()
 				prevLed = LOW;
 			}
 		}
-		digitalWrite(led0Pin,prevLed);
-		digitalWrite(led1Pin,prevLed);
+		digitalWrite(led0Pin, prevLed);
+		digitalWrite(led1Pin, prevLed);
 		break;
-	default: //no light
-		digitalWrite(led0Pin,LOW);
-		digitalWrite(led1Pin,LOW);
+	default: // no light
+		digitalWrite(led0Pin, LOW);
+		digitalWrite(led1Pin, LOW);
 		break;
 	}
 }
