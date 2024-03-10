@@ -3,14 +3,8 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <NewPing.h>
+#include <EEPROM.h>
 
-// MASSIVE TODO 
-/*
- - Delay in manual override
- - EEPROM
- - Display LEDS:
-
-*/
 // put function declarations here:
 void button0Press();
 void button1Press();
@@ -29,6 +23,7 @@ void magnetCheck();
 bool lightCheck();
 void motionDetect();
 void displayLEDS();
+void delayManualSpray();
 
 // Pins:
 //  constants won't change. They're used here to set pin numbers:
@@ -73,14 +68,15 @@ unsigned long debounceDelay = 50;	// the debounce time; increase if the output f
 // Op Mode
 bool opMode = false;
 volatile unsigned int opModeCursor = 0;
-char opMenuLines[4][15] = {"Manual trigger", "SprayDelay: ", "Reset counter", "Exit menu"};
+char opMenuLines[5][15] = {"Manual trigger", "SprayDelay: ", "MaxDist: ", "Reset counter", "Exit menu"};
 unsigned int opMenuLinesSize = sizeof(opMenuLines) / sizeof(opMenuLines[0]);
 
 // User settings
-unsigned int sprayDelay = 30;
+unsigned int sprayDelay = 15; // default of 15 secodns
 unsigned int lightLevel = 600;
 
 // EEPROM data
+int eeAddress = 0;
 unsigned int spraysLeft = 2400; // TODO make non-voilatile
 unsigned int uses = 0;
 
@@ -106,7 +102,7 @@ DallasTemperature sensors(&oneWire);
 NewPing sonar(distanceTrig, distanceEcho, 200);
 
 unsigned int lastDistance = 0; // global var that gets updated once every second
-unsigned int seatedDistanceMax = 100;
+unsigned int seatedDistanceMax = 90;
 unsigned long firstSeatedTime = 0;
 unsigned long timeSpentInProx;
 bool seated = false;
@@ -238,7 +234,8 @@ public:
 			if (lastDistance >= seatedDistanceMax || lastDistance == 0)
 			{
 				current_state = IDLE;
-				seated = false;;
+				seated = false;
+				;
 			}
 			if (to == State::IDLE)
 			{
@@ -283,31 +280,44 @@ void setup()
 	// Copy the formatted string to opMenuLines[1]
 	strcpy(opMenuLines[1], delayStr);
 
+	// Define a char array to hold the concatenated string
+	char seatedDistanceMaxStr[20]; // Ensure this array has enough space
+	// Using sprintf to format the string
+	sprintf(seatedDistanceMaxStr, "MaxDist: %d", seatedDistanceMax); // TODO ram optim possible
+	// Copy the formatted string to opMenuLines[1]
+	strcpy(opMenuLines[2], seatedDistanceMaxStr);
+
 	startMillis = millis();		// initial start time  voor temp sensor (niet altijd 0!)
 	startMillisDist = millis(); // initial start time  voor temp sensor (niet altijd 0!)
+
+	EEPROM.get(eeAddress, spraysLeft);
+	if (spraysLeft > 2400)
+	{ // Happens if nothing in EEPROM yet (outputs max int value i think)
+		spraysLeft = 2400;
+	}
+	Serial.println("Read spraysLeft value from EEPROM:");
+	Serial.println(spraysLeft);
 }
 
 void loop()
 {
 	refreshScreen();
-	pollDistance();
+	// pollDistance();
 	sprayChecker();
-	checkOverrideButton();
-	magnetCheck();
-	motionDetect();
-	displayLEDS();
+	// checkOverrideButton();
+	// magnetCheck();
+	// motionDetect();
+	// displayLEDS();
+	delayManualSpray();
 }
-
+unsigned long startDelayTime;
+bool manualTriggered = false;
 void checkOverrideButton()
 {
 	// https://docs.arduino.cc/built-in-examples/digital/Debounce/
 	//  read the state of the switch into a local variable:
 	int reading = digitalRead(overrideButtonPin);
 	reading = !reading;
-	// Serial.println(reading);
-	// check to see if you just pressed the button
-	// (i.e. the input went from LOW to HIGH), and you've waited long enough
-	// since the last press to ignore any noise:
 
 	// If the switch changed, due to noise or pressing:
 	if (reading != lastButtonState)
@@ -327,17 +337,36 @@ void checkOverrideButton()
 			overrideButtonState = reading;
 
 			// only toggle the LED if the new button state is HIGH
-			// machine.transition(State::TRIGGERED1);
 			if (overrideButtonState == LOW)
 			{
 				machine.transition(State::IDLE);
-				machine.transition(State::TRIGGERED1);
+				manualTriggered = true;
+				startDelayTime = millis();
 			}
 		}
 	}
 
 	// save the reading. Next time through the loop, it'll be the lastButtonState:
 	lastButtonState = reading;
+}
+
+void delayManualSpray()
+{
+	if (!manualTriggered)
+	{
+		return;
+	}
+	long sprayDelayMillis = sprayDelay * 1000;
+	if (millis() - startDelayTime >= sprayDelayMillis)
+	{
+		manualTriggered = false;
+		Serial.println("DELAY DONE - TRIGGERED1 STARTING");
+		machine.transition(State::TRIGGERED1);
+	}
+	else
+	{
+		Serial.println("Delay not done yet");
+	}
 }
 
 void pollDistance()
@@ -363,9 +392,8 @@ void pollDistance()
 		lastDistance = sonar.ping_cm();
 
 		if (lastDistance >= seatedDistanceMax || lastDistance == 0) // LastDistance kan ook 0 worden als distance sens niets ziet: dan is er dus niemand seated
-		// TODO BUG: distance sens doet soms gwn ff 0 voor saus -> handle idk how
 		{
-
+			//  op sommige distance sensors: distance sens doet soms gwn ff 0 voor saus
 			// Iterative bug fix voor bovenstaande - deze code is echt bagger in deze functie sorry ;-;
 			consecutiveZeroDistance += 1;
 			if (consecutiveZeroDistance <= 5)
@@ -393,7 +421,6 @@ void pollDistance()
 		if (timeSpentInProx >= usageTypeTimeThreshold)
 		{
 			machine.transition(State::IN_USE_2);
-			// TODO prob more here
 		}
 		else
 		{
@@ -408,21 +435,6 @@ void pollDistance()
 void usageEnded()
 {
 	Serial.println("Usage ended! noone in prox anymore");
-	// consecutiveZeroDistance = 0; // reset
-	// Only triggeres after someone is out of proximity (seated == false)
-	// timeSpentInProx = millis() - firstSeatedTime; // Rollover problems? I am scared
-	// if (timeSpentInProx >= usageTypeTimeThreshold)
-	// {
-	// 	// Number 2
-	// 	machine.transition(State::TRIGGERED2);
-	// 	// TODO more here?
-	// }
-	// else
-	// {
-	// 	// Number 1
-	// 	machine.transition(State::TRIGGERED1);
-	// 	// TODO more here?
-	// }
 	if (machine.current_state == State::IN_USE)
 	{
 		machine.transition(State::TRIGGERED1);
@@ -435,7 +447,7 @@ void usageEnded()
 
 void sprayChecker()
 {
-	unsigned int period = 22000; // sprays can take up to 30 seconds to fire after power on TODO add spraydelay var in there
+	unsigned int period = 22000; // sprays can take up to 30 seconds to fire after power on
 	if (machine.current_state == State::TRIGGERED1 || machine.current_state == State::TRIGGERED2)
 	{
 		if (!sprayingAllowed || opMode) // in OpMode ook niet sprayen
@@ -470,11 +482,11 @@ void sprayChecker()
 				machine.transition(State::IDLE); // Transition back to IDLE state - so we only go through this once
 				uses++;
 
-				Serial.println("Printing to eeprom");
+				Serial.println("Updating EEPROM");
 				spraysLeft = spraysLeft - uses;
 				uses = 0;
+				EEPROM.put(eeAddress, spraysLeft);
 				Serial.println(spraysLeft);
-				uses = 0;
 			}
 		}
 	}
@@ -692,13 +704,14 @@ void opModeSelection()
 	{
 	case 0:
 		machine.transition(State::IDLE);
-		machine.transition(State::TRIGGERED1);
+		manualTriggered = true;
+		startDelayTime = millis();
 		exitOpMenu();
 		break;
 	case 1:
 		// SprayDelay
 		lcd.setCursor(0, 0);
-		if (sprayDelay >= 90 ? sprayDelay = 30 : sprayDelay += 5)
+		if (sprayDelay >= 60 ? sprayDelay = 0 : sprayDelay += 5)
 			;			   // ternary: cond ? then : else
 		char delayStr[20]; // TODO ram optim possible
 		sprintf(delayStr, "SprayDelay: %d", sprayDelay);
@@ -709,11 +722,25 @@ void opModeSelection()
 
 		break;
 	case 2:
-		spraysLeft = 2400;
-		// TODO write this to EEPROM?
-		exitOpMenu();
+		Serial.println("dsfkjhhgij");
+		lcd.setCursor(0, 0);
+		if (seatedDistanceMax >= 90 ? seatedDistanceMax = 10 : seatedDistanceMax += 10)
+			;						   // ternary: cond ? then : else
+		char seatedDistanceMaxStr[20]; // TODO ram optim possible
+		sprintf(seatedDistanceMaxStr, "MaxDist: %d", seatedDistanceMax);
+		// Copy the formatted string to opMenuLines[1]
+		strcpy(opMenuLines[2], seatedDistanceMaxStr);
+		lcd.print(">");
+		lcd.print(opMenuLines[2]);
 		break;
 	case 3:
+		// Reset spraysleft
+		spraysLeft = 2400;
+		EEPROM.put(eeAddress, spraysLeft);
+		exitOpMenu();
+		break;
+
+	case 4:
 		exitOpMenu();
 		break;
 	}
