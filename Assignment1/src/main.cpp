@@ -107,7 +107,7 @@ unsigned long firstSeatedTime = 0;
 unsigned long timeSpentInProx;
 bool seated = false;
 int consecutiveZeroDistance = 0;
-unsigned int usageTypeTimeThreshold = 10000;  // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
+unsigned int usageTypeTimeThreshold = 60000;  // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
 unsigned int pingInterval = basePingInterval; // time in between pings
 
 unsigned long delayStartTime;
