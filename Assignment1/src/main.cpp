@@ -72,7 +72,7 @@ char opMenuLines[5][15] = {"Manual trigger", "SprayDelay: ", "MaxDist: ", "Reset
 unsigned int opMenuLinesSize = sizeof(opMenuLines) / sizeof(opMenuLines[0]);
 
 // User settings
-unsigned int sprayDelay = 15; // default of 15 secodns
+unsigned int sprayDelay = 10; // default of 10 secodns
 unsigned int lightLevel = 600;
 
 // EEPROM data
@@ -110,6 +110,8 @@ int consecutiveZeroDistance = 0;
 unsigned int usageTypeTimeThreshold = 10000;  // if time >= this value: its a number 2 (make this value a setting in OP MENU?)
 unsigned int pingInterval = basePingInterval; // time in between pings
 
+unsigned long delayStartTime;
+
 // State machine probeersel
 
 enum State
@@ -146,7 +148,7 @@ public:
 		case State::IDLE:
 			if (to == State::TRIGGERED1)
 			{
-
+				delayStartTime = millis();
 				Serial.println("1setstart");
 				startMillisSpray = millis();
 				current_state = to;
@@ -164,6 +166,7 @@ public:
 				Serial.println("2setstart");
 				startMillisSpray = millis();
 				triggeredTime = millis();
+				delayStartTime = millis();
 				current_state = to;
 			}
 			break;
@@ -179,10 +182,12 @@ public:
 			{
 				Serial.println("succes");
 				startMillisSpray = millis();
+				
 				if (anyMotionInInterval)
 				{
 					break;
 				}
+				delayStartTime = millis();
 				current_state = to;
 			}
 			if (to == State::IN_USE_2)
@@ -209,6 +214,7 @@ public:
 				}
 				Serial.println("erdoorheeen");
 				startMillisSpray = millis();
+				delayStartTime = millis();
 				// triggeredTime = millis();
 				current_state = to;
 			}
@@ -217,6 +223,7 @@ public:
 				Serial.println("succ7");
 
 				startMillisSpray = millis();
+				delayStartTime = millis();
 				// triggeredTime = millis();
 				current_state = to;
 			}
@@ -302,13 +309,13 @@ void setup()
 void loop()
 {
 	refreshScreen();
-	// pollDistance();
+	pollDistance();
 	sprayChecker();
 	checkOverrideButton();
 	magnetCheck();
 	motionDetect();
 	displayLEDS();
-	delayManualSpray();
+	// delayManualSpray();
 }
 
 const unsigned ledInterval = 1000;
@@ -371,6 +378,7 @@ void displayLEDS()
 }
 bool manualTriggered = false;
 unsigned long startDelayTime;
+State nextState;
 void checkOverrideButton()
 {
 	// https://docs.arduino.cc/built-in-examples/digital/Debounce/
@@ -399,8 +407,7 @@ void checkOverrideButton()
 			if (overrideButtonState == LOW)
 			{
 				machine.transition(State::IDLE);
-				manualTriggered = true;
-				startDelayTime = millis();
+				machine.transition(State::TRIGGERED1);
 			}
 		}
 	}
@@ -420,11 +427,12 @@ void delayManualSpray()
 	{
 		manualTriggered = false;
 		Serial.println("DELAY DONE - TRIGGERED1 STARTING");
-		machine.transition(State::TRIGGERED1);
+		machine.transition(nextState);
 	}
 	else
 	{
-		Serial.println("Delay not done yet");
+		// Serial.println("Delay not done yet");
+		Serial.println(millis() - startDelayTime);
 	}
 }
 
@@ -449,7 +457,7 @@ void pollDistance()
 		startMillisDist = millis(); // IMPORTANT to save the start time of the current LED state.
 
 		lastDistance = sonar.ping_cm();
-
+		Serial.println(lastDistance);
 		if (lastDistance >= seatedDistanceMax || lastDistance == 0) // LastDistance kan ook 0 worden als distance sens niets ziet: dan is er dus niemand seated
 		{
 			//  op sommige distance sensors: distance sens doet soms gwn ff 0 voor saus
@@ -496,10 +504,12 @@ void usageEnded()
 	Serial.println("Usage ended! noone in prox anymore");
 	if (machine.current_state == State::IN_USE)
 	{
+
 		machine.transition(State::TRIGGERED1);
 	}
 	else if (machine.current_state == State::IN_USE_2)
 	{
+
 		machine.transition(State::TRIGGERED2);
 	}
 }
@@ -514,11 +524,18 @@ void sprayChecker()
 			digitalWrite(sprayPin, LOW); // cancel if on
 			return;
 		}
-		if (millis() - triggeredTime < 3 * 1000)
+		if (millis() - delayStartTime < sprayDelay * 1000 )
+		{ 
+			Serial.println("Delaying... DUE TO SPRAYDELAY");
+			startMillisSpray = millis();
+			return;
+		}
+		if (millis() - triggeredTime < 3 * 1000 )
 		{ // Slight delay that is always there: to make sure Trig2 > Trig1 is smooth
 			Serial.println("Delaying...");
 			return;
 		}
+		
 		if (millis() - startMillisSpray < period)
 		{								  // TODO look at this: rollover might be a problem
 			digitalWrite(sprayPin, HIGH); // Start power to sprayer
@@ -683,7 +700,7 @@ void magnetCheck()
 bool lightCheck()
 {
 	int v = analogRead(ldrPin);
-	Serial.println(v);
+	// Serial.println(v);
 	return (v > lightLevel);
 }
 
@@ -757,8 +774,7 @@ void opModeSelection()
 	{
 	case 0:
 		machine.transition(State::IDLE);
-		manualTriggered = true;
-		startDelayTime = millis();
+		machine.transition(State::TRIGGERED1);
 		exitOpMenu();
 		break;
 	case 1:
@@ -775,7 +791,6 @@ void opModeSelection()
 
 		break;
 	case 2:
-		Serial.println("dsfkjhhgij");
 		lcd.setCursor(0, 0);
 		if (seatedDistanceMax >= 90 ? seatedDistanceMax = 10 : seatedDistanceMax += 10)
 			;						   // ternary: cond ? then : else
