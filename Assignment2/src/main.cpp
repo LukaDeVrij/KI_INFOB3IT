@@ -1,16 +1,94 @@
+/*
+    This sketch establishes a TCP connection to a "quote of the day" service.
+    It sends a "hello" message, and then prints received data.
+*/
 
-#include <Arduino.h>
+#include <ESP8266WiFi.h>
+
+#ifndef STASSID
+#define STASSID "SSID"
+#define STAPSK "PASS"
+#endif
+
+const char* ssid = STASSID;
+const char* password = STAPSK;
+
+const char* host = "djxmmx.net";
+const uint16_t port = 17;
 
 void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);  // Initialize the LED_BUILTIN pin as an output
+  Serial.begin(115200);
+
+  // We start by connecting to a WiFi network
+
+  Serial.println();
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  /* Explicitly set the ESP8266 to be a WiFi-client, otherwise, it by default,
+     would try to act as both a client and an access-point and could cause
+     network-issues with your other WiFi-devices on your WiFi-network. */
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
 }
 
-// the loop function runs over and over again forever
 void loop() {
-  digitalWrite(LED_BUILTIN, LOW);  // Turn the LED on (Note that LOW is the voltage level
-  // but actually the LED is on; this is because
-  // it is active low on the ESP-01)
-  delay(1000);                      // Wait for a second
-  digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by making the voltage HIGH
-  delay(2000);                      // Wait for two seconds (to demonstrate the active low LED)
+  static bool wait = false;
+
+  Serial.print("connecting to ");
+  Serial.print(host);
+  Serial.print(':');
+  Serial.println(port);
+
+  // Use WiFiClient class to create TCP connections
+  WiFiClient client;
+  if (!client.connect(host, port)) {
+    Serial.println("connection failed");
+    delay(5000);
+    return;
+  }
+
+  // This will send a string to the server
+  Serial.println("sending data to server");
+  if (client.connected()) { client.println("hello from ESP8266"); }
+
+  // wait for data to be available
+  unsigned long timeout = millis();
+  while (client.available() == 0) {
+    if (millis() - timeout > 5000) {
+      Serial.println(">>> Client Timeout !");
+      client.stop();
+      delay(60000);
+      return;
+    }
+  }
+
+  // Read all the lines of the reply from server and print them to Serial
+  Serial.println("receiving from remote server");
+  // not testing 'client.connected()' since we do not need to send data here
+  while (client.available()) {
+    char ch = static_cast<char>(client.read());
+    Serial.print(ch);
+  }
+
+  // Close the connection
+  Serial.println();
+  Serial.println("closing connection");
+  client.stop();
+
+  if (wait) {
+    delay(300000);  // execute once every 5 minutes, don't flood remote service
+  }
+  wait = true;
 }
