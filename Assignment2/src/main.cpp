@@ -93,9 +93,9 @@ void reconnect()
         {
             Serial.println("connected");
             // Once connected, publish an announcement...
-            client.publish("outTopic", "hello world");
+            client.publish("infob3it/student018/outTopic", "hello world");
             // ... and resubscribe
-            client.subscribe("inTopic");
+            client.subscribe("infob3it/student018/inTopic");
         }
         else
         {
@@ -111,6 +111,7 @@ void reconnect()
 void setup()
 {
     pinMode(LED_BUILTIN, OUTPUT); // Initialize the BUILTIN_LED pin as an output
+    digitalWrite(LED_BUILTIN, HIGH);
     Serial.begin(115200);
     setup_wifi();
     client.setServer(mqtt_server, 1883);
@@ -134,6 +135,6 @@ void loop()
         snprintf(msg, MSG_BUFFER_SIZE, "hello world #%ld", value);
         Serial.print("Publish message: ");
         Serial.println(msg);
-        client.publish("outTopic", msg);
+        client.publish("infob3it/student018/outTopic", msg);
     }
 }
