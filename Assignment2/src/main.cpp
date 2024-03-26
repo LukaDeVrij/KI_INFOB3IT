@@ -20,13 +20,7 @@
 
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
-#include <creds.cpp>
-
-// Update these with values suitable for your network.
-
-// const char* ssid = "";
-// const char* password = "";
-// const char* mqtt_server = "science-vs352.science.uu.nl";
+#include <creds.h> // has credentials for wifi and mqtt broker
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -75,13 +69,13 @@ void callback(char *topic, byte *payload, unsigned int length)
     // Switch on the LED if an 1 was received as first character
     if ((char)payload[0] == '1')
     {
-        digitalWrite(BUILTIN_LED, LOW); // Turn the LED on (Note that LOW is the voltage level
+        digitalWrite(LED_BUILTIN, LOW); // Turn the LED on (Note that LOW is the voltage level
                                         // but actually the LED is on; this is because
                                         // it is active low on the ESP-01)
     }
     else
     {
-        digitalWrite(BUILTIN_LED, HIGH); // Turn the LED off by making the voltage HIGH
+        digitalWrite(LED_BUILTIN, HIGH); // Turn the LED off by making the voltage HIGH
     }
 }
 
@@ -116,7 +110,7 @@ void reconnect()
 
 void setup()
 {
-    pinMode(BUILTIN_LED, OUTPUT); // Initialize the BUILTIN_LED pin as an output
+    pinMode(LED_BUILTIN, OUTPUT); // Initialize the BUILTIN_LED pin as an output
     Serial.begin(115200);
     setup_wifi();
     client.setServer(mqtt_server, 1883);
@@ -133,7 +127,7 @@ void loop()
     client.loop();
 
     unsigned long now = millis();
-    if (now - lastMsg > 2000)
+    if (now - lastMsg > 10000)
     {
         lastMsg = now;
         ++value;
