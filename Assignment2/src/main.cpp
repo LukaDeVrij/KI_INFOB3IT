@@ -53,6 +53,7 @@ unsigned long lastSoil = 0;
 unsigned long lastWater = 0;
 bool soilDelay = false;
 bool waterDelay = false;
+bool servoDelay = false;
 
 #define MSG_BUFFER_SIZE (50)
 char msg[MSG_BUFFER_SIZE];
@@ -214,6 +215,12 @@ void hardware_loop()
     {
         waterDelay = false;
         myServo.write(0);
+        servoDelay = true;
+        lastWater = now;
+    }
+    if(servoDelay && now - lastWater > 15 )
+    {
+        servoDelay = false;
         myServo.detach();
     }
     
