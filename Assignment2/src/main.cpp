@@ -21,13 +21,105 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <creds.h> // has credentials for wifi and mqtt broker
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_BMP280.h>
+
+#define SCREEN_WIDTH 128    // OLED display width, in pixels
+#define SCREEN_HEIGHT 64    // OLED display height, in pixels
+#define OLED_RESET -1       // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_BMP280 bmp; // I2C
+
+// Pin allocation:
+const int selectPin = D6;
+const int analogInputPin = A0;
+const int servoPin = D5;
+const int buttonPin = D7;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 unsigned long lastMsg = 0;
+unsigned long lastRefresh = 0;
 #define MSG_BUFFER_SIZE (50)
 char msg[MSG_BUFFER_SIZE];
 int value = 0;
+
+void setup()
+{
+    Serial.begin(9600);
+
+    // Setup pin modes:
+    pinMode(selectPin, OUTPUT);
+    pinMode(analogInputPin, INPUT);
+    pinMode(buttonPin, INPUT);
+    pinMode(LED_BUILTIN, OUTPUT); // Initialize the BUILTIN_LED pin as an output
+
+    digitalWrite(LED_BUILTIN, HIGH); // Set LED off by default
+
+    setup_hardware();
+
+    // MQTT
+    setup_wifi();
+    client.setServer(mqtt_server, 1883);
+    client.setCallback(callback); // Callback is called when anything is received
+}
+
+void loop()
+{
+
+    mqtt_loop();
+    hardware_loop();
+}
+
+void mqtt_loop()
+{
+    if (!client.connected())
+    {
+        reconnect();
+    }
+    client.loop();
+
+    unsigned long now = millis();
+    if (now - lastMsg > 10000)
+    {
+        lastMsg = now;
+        ++value;
+        snprintf(msg, MSG_BUFFER_SIZE, "hello world #%ld", value);
+        Serial.print("Publish message: ");
+        Serial.println(msg);
+        client.publish("infob3it/student018/outTopic", msg);
+    }
+}
+
+void hardware_loop()
+{
+    unsigned long now = millis();
+    if (now - lastRefresh > 2000)
+    {
+        lastRefresh = now;
+
+        Serial.print(F("Temperature = "));
+        float temp = bmp.readTemperature();
+        Serial.print(temp);
+        Serial.println(" *C");
+
+        display.print(temp);
+
+        Serial.print(F("Pressure = "));
+        Serial.print(bmp.readPressure());
+        Serial.println(" Pa");
+
+        Serial.print(F("Approx altitude = "));
+        Serial.print(bmp.readAltitude(1013.25)); /* Adjusted to local forecast! */
+        Serial.println(" m");
+
+        Serial.println();
+    }
+}
 
 void setup_wifi()
 {
@@ -53,6 +145,24 @@ void setup_wifi()
     Serial.println("WiFi connected");
     Serial.println("IP address: ");
     Serial.println(WiFi.localIP());
+}
+
+void setup_hardware()
+{
+    // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
+    {
+        Serial.println(F("SSD1306 allocation failed"));
+    }
+    if (!bmp.begin(BMP280_ADDRESS_ALT, BMP280_CHIPID))
+    {
+        Serial.println(F("BM280 allocation failed"));
+    }
+
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0,0);
+
 }
 
 void callback(char *topic, byte *payload, unsigned int length)
@@ -95,7 +205,7 @@ void reconnect()
             // Once connected, publish an announcement...
             client.publish("infob3it/student018/outTopic", "hello world");
             // ... and resubscribe
-            client.subscribe("infob3it/student018/inTopic");
+            client.subscribe("infob3it/student018/inTopic/LED");
         }
         else
         {
@@ -105,36 +215,5 @@ void reconnect()
             // Wait 5 seconds before retrying
             delay(5000);
         }
-    }
-}
-
-void setup()
-{
-    pinMode(LED_BUILTIN, OUTPUT); // Initialize the BUILTIN_LED pin as an output
-    digitalWrite(LED_BUILTIN, HIGH);
-    Serial.begin(115200);
-    setup_wifi();
-    client.setServer(mqtt_server, 1883);
-    client.setCallback(callback);
-}
-
-void loop()
-{
-
-    if (!client.connected())
-    {
-        reconnect();
-    }
-    client.loop();
-
-    unsigned long now = millis();
-    if (now - lastMsg > 10000)
-    {
-        lastMsg = now;
-        ++value;
-        snprintf(msg, MSG_BUFFER_SIZE, "hello world #%ld", value);
-        Serial.print("Publish message: ");
-        Serial.println(msg);
-        client.publish("infob3it/student018/outTopic", msg);
     }
 }
